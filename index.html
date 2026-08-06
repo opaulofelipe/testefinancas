@@ -1,227 +1,368 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0a1023" />
-    <meta name="description" content="Dashboard interativo de finanças pessoais com filtros, insights e importação de planilhas." />
-    <title>Finanças em foco · Dashboard</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <div class="ambient ambient-one" aria-hidden="true"></div>
-    <div class="ambient ambient-two" aria-hidden="true"></div>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#080b16">
+  <meta name="description" content="Dashboard interativo para acompanhar as finanças domésticas.">
 
-    <div class="app-shell">
-      <aside class="sidebar glass-panel" aria-label="Fonte e controles">
-        <div class="brand-lockup">
-          <div class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 40 40" role="img"><path d="M10 27.5 16.2 21l4.2 3.6L30 14" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M25.5 14H30v4.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </div>
+  <title>Casa em Dia — Finanças domésticas</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+
+  <script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <script defer src="app.js"></script>
+</head>
+
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <aside class="sidebar glass-panel">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" role="img">
+            <path d="M9 22.5 24 10l15 12.5V38a3 3 0 0 1-3 3H12a3 3 0 0 1-3-3V22.5Z"></path>
+            <path d="M18 41V28h12v13"></path>
+          </svg>
+        </div>
+        <div>
+          <span>Casa em Dia</span>
+          <small>Finanças domésticas</small>
+        </div>
+      </div>
+
+      <section class="source-card" aria-labelledby="sourceTitle">
+        <div class="source-heading">
+          <span class="status-dot" id="statusDot" aria-hidden="true"></span>
           <div>
-            <p class="eyebrow">PERSONAL FINANCE</p>
-            <h1>Finanças em foco</h1>
+            <small id="sourceTitle">Fonte dos dados</small>
+            <strong id="sourceName">Procurando planilha…</strong>
+          </div>
+        </div>
+        <p id="sourceMeta">Buscando Financas.xlsx na raiz do projeto.</p>
+
+        <button class="upload-button" id="openFileButton" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"></path>
+          </svg>
+          Carregar nova tabela
+        </button>
+        <input id="fileInput" type="file" accept=".xlsx,.xls,.csv" hidden>
+      </section>
+
+      <nav class="sidebar-nav" aria-label="Navegação do dashboard">
+        <a href="#overview" class="nav-link is-active">Visão geral</a>
+        <a href="#analysis" class="nav-link">Análises</a>
+        <a href="#details" class="nav-link">Detalhamento</a>
+      </nav>
+
+      <section class="mini-guide">
+        <span class="eyebrow">Como ler</span>
+        <div class="guide-item">
+          <i class="guide-dot income"></i>
+          <span>Entradas: Renda + Quintino</span>
+        </div>
+        <div class="guide-item">
+          <i class="guide-dot essential"></i>
+          <span>Base da casa: moradia e contas</span>
+        </div>
+        <div class="guide-item">
+          <i class="guide-dot flexible"></i>
+          <span>Flexíveis: cartão e lazer</span>
+        </div>
+      </section>
+
+      <p class="sidebar-footer">Os cálculos são feitos no navegador. Nenhum dado é enviado.</p>
+    </aside>
+
+    <main class="dashboard">
+      <header class="topbar">
+        <div>
+          <span class="eyebrow">Painel da casa</span>
+          <h1>Seu dinheiro, com contexto.</h1>
+        </div>
+
+        <div class="topbar-meta">
+          <span id="periodLabel">Aguardando dados</span>
+          <span class="meta-separator"></span>
+          <span id="updatedAt">—</span>
+        </div>
+      </header>
+
+      <section class="hero glass-panel" id="overview">
+        <div class="hero-copy">
+          <span class="eyebrow">Leitura principal</span>
+          <h2 id="heroTitle">Carregando a história financeira da casa…</h2>
+          <p id="heroDescription">O painel vai comparar entradas, gastos e saldo sem esconder os meses difíceis.</p>
+        </div>
+
+        <div class="hero-number">
+          <span id="heroNumberLabel">Saldo médio mensal</span>
+          <strong id="heroNumber">—</strong>
+          <small id="heroNumberFoot">—</small>
+        </div>
+      </section>
+
+      <section class="filters glass-panel" aria-labelledby="filterTitle">
+        <div class="section-heading filter-heading">
+          <div>
+            <span class="eyebrow">Recorte</span>
+            <h2 id="filterTitle">Compare períodos livremente</h2>
+          </div>
+
+          <div class="filter-actions">
+            <span class="result-count" id="resultCount">0 meses</span>
+            <button class="text-button" id="clearFilters" type="button">Limpar filtros</button>
           </div>
         </div>
 
-        <div class="sidebar-divider"></div>
+        <div class="filter-grid">
+          <div class="filter-block">
+            <div class="filter-label">
+              <span>Anos</span>
+              <small>Selecione um ou vários</small>
+            </div>
+            <div class="chip-row" id="yearChips" aria-label="Filtro por anos"></div>
+          </div>
 
-        <section class="source-card" aria-labelledby="source-title">
+          <div class="filter-block">
+            <div class="filter-label">
+              <span>Meses</span>
+              <small>Compare sazonalidade</small>
+            </div>
+            <div class="chip-row months" id="monthChips" aria-label="Filtro por meses"></div>
+          </div>
+
+          <div class="filter-block compact-filter">
+            <div class="filter-label">
+              <span>Situação</span>
+              <small>Resultado do mês</small>
+            </div>
+            <div class="segmented" id="statusChips" aria-label="Filtro por situação"></div>
+          </div>
+
+          <div class="filter-block compact-filter">
+            <div class="filter-label">
+              <span>Visão do gasto</span>
+              <small>Foco das categorias</small>
+            </div>
+            <div class="segmented" id="viewChips" aria-label="Visão do gasto"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="kpi-grid" aria-label="Indicadores principais">
+        <article class="kpi-card glass-panel">
+          <div class="kpi-icon income-icon" aria-hidden="true">↙</div>
+          <span>Entrada média</span>
+          <strong id="incomeAverage">—</strong>
+          <small id="incomeFoot">Por mês</small>
+        </article>
+
+        <article class="kpi-card glass-panel">
+          <div class="kpi-icon spend-icon" aria-hidden="true">↗</div>
+          <span>Gasto médio</span>
+          <strong id="spendAverage">—</strong>
+          <small id="spendFoot">Por mês</small>
+        </article>
+
+        <article class="kpi-card glass-panel">
+          <div class="kpi-icon balance-icon" aria-hidden="true">≈</div>
+          <span>Saldo médio</span>
+          <strong id="balanceAverage">—</strong>
+          <small id="balanceFoot">Por mês</small>
+        </article>
+
+        <article class="kpi-card glass-panel">
+          <div class="kpi-icon consistency-icon" aria-hidden="true">✓</div>
+          <span>Meses no azul</span>
+          <strong id="positiveRate">—</strong>
+          <small id="positiveFoot">Consistência do período</small>
+        </article>
+      </section>
+
+      <section class="dashboard-grid" id="analysis">
+        <article class="chart-card wide-card glass-panel">
           <div class="section-heading">
             <div>
-              <p class="eyebrow">FONTE DE DADOS</p>
-              <h2 id="source-title">Sua planilha</h2>
+              <span class="eyebrow">Fluxo mensal</span>
+              <h2>Entradas, gastos e saldo</h2>
             </div>
-            <span class="status-dot" id="dataStatusDot" aria-label="Status da fonte"></span>
+            <span class="card-note" id="cashflowNote">Valores por mês</span>
           </div>
-          <p class="source-name" id="sourceName">Carregando arquivo da raiz…</p>
-          <p class="source-meta" id="sourceMeta">Aguardando leitura dos dados</p>
-          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="Escolher uma nova planilha">
-            <input id="fileInput" type="file" accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" hidden />
-            <div class="dropzone-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14.5v3A2.5 2.5 0 0 0 7.5 20h9a2.5 2.5 0 0 0 2.5-2.5v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </div>
+          <div class="chart-wrap chart-large">
+            <canvas id="cashflowChart"></canvas>
+          </div>
+        </article>
+
+        <article class="health-card glass-panel">
+          <div class="section-heading">
             <div>
-              <strong>Trocar tabela</strong>
-              <span>Arraste ou escolha .xlsx / .csv</span>
+              <span class="eyebrow">Saúde da casa</span>
+              <h2>Quanto da renda já está comprometido?</h2>
             </div>
           </div>
-          <p class="micro-copy">O arquivo pode ser atualizado a qualquer momento. Os cálculos e gráficos se ajustam automaticamente.</p>
-        </section>
 
-        <section class="sidebar-help">
-          <div class="help-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M12 17.2v.1M9.7 9a2.5 2.5 0 1 1 4 2c-.9.7-1.7 1.1-1.7 2.3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-          </div>
-          <div>
-            <strong>Como ler</strong>
-            <p>Saldo positivo indica entradas acima dos gastos no período selecionado.</p>
-          </div>
-        </section>
+          <div class="health-list">
+            <div class="health-item">
+              <div class="health-label">
+                <span>Gastos totais</span>
+                <strong id="spendCommitment">—</strong>
+              </div>
+              <div class="progress-track"><span id="spendProgress"></span></div>
+            </div>
 
-        <div class="sidebar-footer">
-          <span class="footer-pulse"></span>
-          <span id="lastUpdated">Pronto para analisar</span>
+            <div class="health-item">
+              <div class="health-label">
+                <span>Base da casa</span>
+                <strong id="essentialCommitment">—</strong>
+              </div>
+              <div class="progress-track"><span id="essentialProgress" class="essential-progress"></span></div>
+            </div>
+
+            <div class="health-item">
+              <div class="health-label">
+                <span>Gastos flexíveis</span>
+                <strong id="flexibleCommitment">—</strong>
+              </div>
+              <div class="progress-track"><span id="flexibleProgress" class="flexible-progress"></span></div>
+            </div>
+          </div>
+
+          <div class="health-summary" id="healthSummary">Aguardando dados.</div>
+        </article>
+
+        <article class="chart-card glass-panel">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Composição</span>
+              <h2>Para onde vai o dinheiro</h2>
+            </div>
+          </div>
+          <div class="donut-layout">
+            <div class="chart-wrap chart-donut">
+              <canvas id="categoryChart"></canvas>
+            </div>
+            <div class="chart-legend" id="categoryLegend"></div>
+          </div>
+        </article>
+
+        <article class="chart-card glass-panel">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Comparação anual</span>
+              <h2>Média mensal por ano</h2>
+            </div>
+          </div>
+          <div class="chart-wrap">
+            <canvas id="yearChart"></canvas>
+          </div>
+        </article>
+
+        <article class="insights-card wide-card glass-panel">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">Insights acionáveis</span>
+              <h2>O que merece sua atenção</h2>
+            </div>
+          </div>
+          <div class="insights-grid" id="insightsGrid"></div>
+        </article>
+      </section>
+
+      <section class="details-section" id="details">
+        <article class="table-card glass-panel">
+          <div class="section-heading table-heading">
+            <div>
+              <span class="eyebrow">Categorias</span>
+              <h2>Ranking de gastos</h2>
+            </div>
+            <button class="secondary-button" id="exportButton" type="button">Exportar recorte</button>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Categoria</th>
+                  <th>Tipo</th>
+                  <th>Média/mês</th>
+                  <th>Participação</th>
+                  <th>Tendência</th>
+                </tr>
+              </thead>
+              <tbody id="categoryTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="table-card glass-panel">
+          <div class="section-heading table-heading">
+            <div>
+              <span class="eyebrow">Histórico</span>
+              <h2>Detalhamento mensal</h2>
+            </div>
+            <span class="card-note" id="tableCount">0 registros</span>
+          </div>
+
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Período</th>
+                  <th>Entradas</th>
+                  <th>Base da casa</th>
+                  <th>Flexíveis</th>
+                  <th>Gasto total</th>
+                  <th>Saldo</th>
+                  <th>Situação</th>
+                </tr>
+              </thead>
+              <tbody id="monthlyTableBody"></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <section class="upload-zone glass-panel" id="uploadZone" tabindex="0" role="button" aria-label="Carregar outra planilha">
+        <div class="upload-illustration" aria-hidden="true">
+          <svg viewBox="0 0 64 64">
+            <rect x="12" y="8" width="40" height="48" rx="10"></rect>
+            <path d="M22 22h20M22 31h20M22 40h12"></path>
+            <path d="m39 45 5 5 9-11"></path>
+          </svg>
         </div>
-      </aside>
+        <div>
+          <span class="eyebrow">Atualizar dados</span>
+          <h2>Arraste outra planilha ou clique aqui</h2>
+          <p>Compatível com XLSX, XLS e CSV. A primeira aba será utilizada.</p>
+        </div>
+      </section>
 
-      <main class="main-content">
-        <header class="topbar">
-          <div>
-            <p class="eyebrow">VISÃO GERAL · <span id="periodLabel">Todos os períodos</span></p>
-            <h2 class="page-title">Clareza para cada decisão.</h2>
-          </div>
-          <div class="topbar-actions">
-            <button class="ghost-button" id="resetFilters" type="button" title="Limpar filtros">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 5.5v5h5M5 10.2A7.5 7.5 0 1 1 6.4 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span>Limpar</span>
-            </button>
-            <button class="primary-button" id="exportCsv" type="button">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19.5h14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              <span>Exportar visão</span>
-            </button>
-          </div>
-        </header>
+      <footer>
+        <span id="methodNote">Entradas = Renda + Quintino · Gastos = soma das categorias.</span>
+        <span>Casa em Dia</span>
+      </footer>
+    </main>
+  </div>
 
-        <section class="hero glass-panel" aria-labelledby="hero-title">
-          <div class="hero-copy">
-            <div class="hero-kicker"><span class="sparkle">✦</span> Leitura inteligente do seu dinheiro</div>
-            <h3 id="hero-title">Seu dinheiro,<br /><span>em perspectiva.</span></h3>
-            <p>Monitore entradas, gastos e saldo em um só lugar. Use os filtros para encontrar padrões, oportunidades e pontos de atenção.</p>
-            <div class="hero-tags">
-              <span class="tag"><i class="tag-dot tag-dot-blue"></i><span id="rowCountTag">0 meses</span> analisados</span>
-              <span class="tag"><i class="tag-dot tag-dot-violet"></i><span id="categoryCountTag">0 categorias</span></span>
-            </div>
-          </div>
-          <div class="hero-illustration" aria-hidden="true">
-            <div class="orb orb-back"></div>
-            <div class="orb orb-front"></div>
-            <div class="mini-chart">
-              <span style="height:29%"></span><span style="height:42%"></span><span style="height:36%"></span><span style="height:64%"></span><span style="height:53%"></span><span style="height:80%"></span><span style="height:70%"></span><span style="height:92%"></span>
-            </div>
-            <div class="hero-coin coin-one">R$</div>
-            <div class="hero-coin coin-two">↗</div>
-            <div class="hero-ring"></div>
-          </div>
-        </section>
-
-        <section class="filter-panel glass-panel" aria-labelledby="filters-title">
-          <div class="filter-heading">
-            <div>
-              <p class="eyebrow">EXPLORAR</p>
-              <h3 id="filters-title">Filtros inteligentes</h3>
-            </div>
-            <span class="filter-result" id="filterResult">0 de 0 meses</span>
-          </div>
-          <div class="filter-grid">
-            <label class="field-label">Ano
-              <select id="yearFilter"><option value="all">Todos os anos</option></select>
-            </label>
-            <label class="field-label">Mês
-              <select id="monthFilter"><option value="all">Todos os meses</option></select>
-            </label>
-            <label class="field-label">Saldo
-              <select id="statusFilter">
-                <option value="all">Todos os saldos</option>
-                <option value="positive">Somente positivos</option>
-                <option value="negative">Somente negativos</option>
-              </select>
-            </label>
-            <label class="field-label">Maior categoria do mês
-              <select id="leaderFilter"><option value="all">Todas as categorias</option></select>
-            </label>
-          </div>
-        </section>
-
-        <section class="kpi-grid" aria-label="Indicadores principais">
-          <article class="kpi-card glass-panel accent-blue">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 9.5h14M7.5 5h9A2.5 2.5 0 0 1 19 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 16.5v-9A2.5 2.5 0 0 1 7.5 5Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M15.5 14h.1" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg></span><span class="kpi-label">Entradas</span></div>
-            <strong class="kpi-value" id="kpiIncome">—</strong>
-            <span class="kpi-foot" id="kpiIncomeFoot">Soma de Renda e Quintino</span>
-          </article>
-          <article class="kpi-card glass-panel accent-pink">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7.5h14M7.5 4h9A2.5 2.5 0 0 1 19 6.5v11A2.5 2.5 0 0 1 16.5 20h-9A2.5 2.5 0 0 1 5 17.5v-11A2.5 2.5 0 0 1 7.5 4Z" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="m9 11 2.2 2.2L15.3 9" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="kpi-label">Gastos</span></div>
-            <strong class="kpi-value" id="kpiSpend">—</strong>
-            <span class="kpi-foot" id="kpiSpendFoot">Categorias de despesa</span>
-          </article>
-          <article class="kpi-card glass-panel accent-violet">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5 9.2 12l3.2 3 7.6-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M16 7h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="kpi-label">Balança</span></div>
-            <strong class="kpi-value" id="kpiBalance">—</strong>
-            <span class="kpi-foot" id="kpiBalanceFoot">Entradas menos gastos</span>
-          </article>
-          <article class="kpi-card glass-panel accent-green">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.8v16.4M16.2 7.1c-.7-1-2-1.7-3.8-1.7-2.2 0-3.5 1.1-3.5 2.6 0 4.3 7.6 1.9 7.6 6.2 0 1.6-1.3 2.8-3.8 2.8-1.7 0-3.1-.6-4-1.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg></span><span class="kpi-label">Taxa de poupança</span></div>
-            <strong class="kpi-value" id="kpiSavings">—</strong>
-            <span class="kpi-foot" id="kpiSavingsFoot">Balança ÷ entradas</span>
-          </article>
-          <article class="kpi-card glass-panel accent-orange">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 19.2h15M6.5 16.5V8.8M12 16.5V5M17.5 16.5v-4.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span><span class="kpi-label">Custo essencial</span></div>
-            <strong class="kpi-value" id="kpiFixed">—</strong>
-            <span class="kpi-foot" id="kpiFixedFoot">Aluguel, condomínio, luz, gás e internet</span>
-          </article>
-          <article class="kpi-card glass-panel accent-cyan">
-            <div class="kpi-top"><span class="kpi-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5 19 7v5.8c0 3.4-2.4 5.7-7 7.2-4.6-1.5-7-3.8-7-7.2V7l7-2.5Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m9.4 12 1.7 1.7 3.6-3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="kpi-label">Meses positivos</span></div>
-            <strong class="kpi-value" id="kpiPositive">—</strong>
-            <span class="kpi-foot" id="kpiPositiveFoot">Saldo acima de zero</span>
-          </article>
-        </section>
-
-        <section class="chart-grid" aria-label="Visualizações financeiras">
-          <article class="chart-card glass-panel chart-wide">
-            <div class="chart-header"><div><p class="eyebrow">FLUXO NO TEMPO</p><h3>Entradas, gastos e balança</h3></div><span class="chart-note" id="cashflowNote">—</span></div>
-            <div class="chart-wrap"><canvas id="cashflowChart" aria-label="Gráfico de linha com entradas, gastos e balança por mês"></canvas></div>
-          </article>
-          <article class="chart-card glass-panel">
-            <div class="chart-header"><div><p class="eyebrow">COMPOSIÇÃO</p><h3>Para onde vai o dinheiro</h3></div><span class="chart-note">participação</span></div>
-            <div class="chart-wrap donut-wrap"><canvas id="compositionChart" aria-label="Gráfico de rosca com a composição dos gastos"></canvas></div>
-            <div class="legend-list" id="compositionLegend"></div>
-          </article>
-          <article class="chart-card glass-panel chart-wide">
-            <div class="chart-header"><div><p class="eyebrow">COMPARAÇÃO</p><h3>Ritmo por ano</h3></div><span class="chart-note">período filtrado</span></div>
-            <div class="chart-wrap"><canvas id="yearChart" aria-label="Gráfico de barras com entradas e gastos por ano"></canvas></div>
-          </article>
-          <article class="chart-card glass-panel">
-            <div class="chart-header"><div><p class="eyebrow">SAZONALIDADE</p><h3>Saldo médio por mês</h3></div><span class="chart-note">média histórica</span></div>
-            <div class="chart-wrap"><canvas id="seasonalityChart" aria-label="Gráfico de barras com saldo médio por mês"></canvas></div>
-          </article>
-        </section>
-
-        <section class="insights-grid" aria-labelledby="insights-title">
-          <div class="section-intro"><div><p class="eyebrow">LEITURA AUTOMÁTICA</p><h3 id="insights-title">Insights que merecem atenção</h3></div><span class="section-caption">Gerados a partir do período filtrado</span></div>
-          <div id="insightsList" class="insight-cards"></div>
-        </section>
-
-        <section class="lower-grid">
-          <article class="health-card glass-panel" aria-labelledby="health-title">
-            <div class="section-heading"><div><p class="eyebrow">TERMÔMETRO</p><h3 id="health-title">Saúde do período</h3></div><span class="health-badge" id="healthBadge">—</span></div>
-            <div class="health-score-row"><div class="score-orb" id="scoreOrb"><strong id="healthScore">—</strong><span>/100</span></div><div><strong class="health-label" id="healthLabel">Aguardando dados</strong><p id="healthDescription">O índice combina meses positivos, taxa de poupança e peso do custo essencial.</p></div></div>
-            <div class="meter-list">
-              <div class="meter-item"><div><span>Meses positivos</span><strong id="healthPositive">—</strong></div><div class="meter-track"><span id="healthPositiveBar"></span></div></div>
-              <div class="meter-item"><div><span>Taxa de poupança</span><strong id="healthSavings">—</strong></div><div class="meter-track"><span id="healthSavingsBar"></span></div></div>
-              <div class="meter-item"><div><span>Custo essencial</span><strong id="healthEssential">—</strong></div><div class="meter-track"><span id="healthEssentialBar"></span></div></div>
-            </div>
-          </article>
-
-          <article class="table-card glass-panel" aria-labelledby="table-title">
-            <div class="table-header"><div><p class="eyebrow">DETALHAMENTO</p><h3 id="table-title">Meses analisados</h3></div><span class="table-caption" id="tableCaption">—</span></div>
-            <div class="table-scroller"><table><thead><tr><th scope="col">Período</th><th scope="col">Entradas</th><th scope="col">Gastos</th><th scope="col">Balança</th><th scope="col">Poupança</th><th scope="col">Maior categoria</th></tr></thead><tbody id="dataTableBody"></tbody></table></div>
-          </article>
-        </section>
-
-        <footer class="page-footer">
-          <div><span class="footer-logo">✦</span><span>Finanças em foco</span></div>
-          <p>Cálculos: entradas = Renda + Quintino · gastos = soma das categorias · balança = entradas − gastos.</p>
-        </footer>
-      </main>
+  <div class="empty-state" id="emptyState" hidden>
+    <div class="empty-card glass-panel">
+      <div class="empty-icon" aria-hidden="true">↥</div>
+      <span class="eyebrow">Planilha necessária</span>
+      <h2>Não encontrei Financas.xlsx na raiz.</h2>
+      <p>Você pode renomear o arquivo para <strong>Financas.xlsx</strong> ou carregá-lo manualmente agora.</p>
+      <button class="upload-button large" id="emptyUploadButton" type="button">Selecionar planilha</button>
+      <small id="emptyError"></small>
     </div>
+  </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="app.js"></script>
-  </body>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
 </html>
