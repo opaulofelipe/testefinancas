@@ -1,12 +1,3 @@
-/*
- * Finanças da casa
- *
- * O painel foi pensado para orçamento doméstico:
- * - separa contas essenciais, gastos flexíveis e outros;
- * - compara vários anos e meses sem menus suspensos;
- * - mostra médias mensais, pressão sobre a renda e movimentos recentes;
- * - permite importar outra planilha sem alterar o arquivo original.
- */
 (function () {
   "use strict";
 
@@ -25,7 +16,7 @@
     "dezembro"
   ];
 
-  const MONTH_LABELS = [
+  const MONTH_SHORT = [
     "Jan",
     "Fev",
     "Mar",
@@ -40,1872 +31,1242 @@
     "Dez"
   ];
 
-  const DEFAULT_FILES = [
-    "./Finanças.xlsx",
-    "./Finanças.xlsx",
+  const DEFAULT_FILE_URLS = [
     "./Financas.xlsx",
     "./financas.xlsx",
-    "./upload/Finanças.xlsx"
+    "./Finanças.xlsx",
+    "./Financ\u0327as.xlsx",
+    "./FINANCAS.xlsx",
+    "./upload/Financ\u0327as.xlsx"
   ];
 
-  const INCOME_ALIASES = [
-    "renda",
-    "quintino",
-    "receita",
-    "receitas",
-    "entrada",
-    "entradas",
-    "salario",
-    "salário",
-    "income"
-  ];
+  const HEADER_ALIASES = {
+    month: ["mes", "month", "periodo", "competencia"],
+    year: ["ano", "year"],
+    total: ["totalgasto", "gastototal", "totaldespesa", "despesastotais"],
+    balance: ["balanca", "saldo", "balance", "resultado"],
+    income: [
+      "renda",
+      "quintino",
+      "receita",
+      "receitas",
+      "entrada",
+      "entradas",
+      "salario",
+      "salarios"
+    ]
+  };
 
-  const SUMMARY_ALIASES = [
-    "totalgasto",
-    "totaldespesa",
-    "gastototal",
-    "despesastotal",
-    "balanca",
-    "saldo",
-    "balance",
-    "poupanca",
-    "taxa de poupanca"
-  ];
-
-  const GROUP_RULES = {
+  const GROUPS = {
     essential: {
-      label: "Essenciais",
-      shortLabel: "Essenciais",
-      color: "#ffc178",
+      label: "Base da casa",
+      color: "#ffc575",
       aliases: [
         "aluguel",
         "condominio",
-        "condomínio",
         "luz",
         "energia",
         "gas",
-        "gás",
         "agua",
-        "água",
         "internet",
         "telefone",
-        "escola",
-        "saude",
-        "saúde",
-        "plano",
+        "moradia",
         "financiamento",
         "prestacao",
-        "prestação"
+        "escola",
+        "saude",
+        "plano"
       ]
     },
     flexible: {
-      label: "Flexíveis",
-      shortLabel: "Flexíveis",
-      color: "#78d9e9",
+      label: "Flexível",
+      color: "#67dbe5",
       aliases: [
         "cartao",
-        "cartão",
         "comida",
         "lazer",
-        "entretenimento",
         "restaurante",
         "delivery",
+        "mercado",
         "compras",
         "viagem",
-        "roupa"
+        "entretenimento"
       ]
     },
     other: {
       label: "Outros",
-      shortLabel: "Outros",
-      color: "#9c8eff",
+      color: "#9b8cff",
       aliases: []
     }
   };
 
-  const GROUP_ORDER = ["essential", "flexible", "other"];
-
-  const palette = [
-    "#78d9e9",
-    "#9c8eff",
-    "#ff83b4",
-    "#ffc178",
-    "#6edbaa",
-    "#7aa9ff",
-    "#d19bff",
-    "#6dd3c4"
+  const CATEGORY_COLORS = [
+    "#67dbe5",
+    "#9b8cff",
+    "#ffc575",
+    "#ff86ad",
+    "#62dba8",
+    "#7da8ff",
+    "#d58cff",
+    "#ff9b6c"
   ];
 
-  const currency = new Intl.NumberFormat("pt-BR", {
+  const money = new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
     minimumFractionDigits: 0,
     maximumFractionDigits: 2
   });
 
-  const number = new Intl.NumberFormat("pt-BR", {
-    maximumFractionDigits: 0
-  });
-
-  const percent = new Intl.NumberFormat("pt-BR", {
+  const percentage = new Intl.NumberFormat("pt-BR", {
     style: "percent",
-    minimumFractionDigits: 1,
+    minimumFractionDigits: 0,
     maximumFractionDigits: 1
   });
 
   const state = {
     rows: [],
-    sourceName: "",
     categories: [],
     categoryGroups: {},
-    incomeSources: [],
-    filtered: [],
+    incomeColumns: [],
+    filteredRows: [],
+    sourceName: "",
     charts: {},
-    ignoredRows: 0
+    filters: {
+      years: new Set(),
+      months: new Set(),
+      status: "all",
+      view: "all"
+    }
   };
 
-  const filterState = {
-    years: new Set(),
-    months: new Set(),
-    status: "all",
-    lens: "all"
-  };
-
-  const els = {};
-  const $ = (id) => document.getElementById(id);
+  const elements = {};
+  const byId = (id) => document.getElementById(id);
 
   document.addEventListener("DOMContentLoaded", init);
 
-  async function init() {
+  function init() {
+    cacheElements();
+    bindEvents();
+    configureCharts();
+    renderEmptyDashboard();
+    loadDefaultWorkbook();
+  }
+
+  function cacheElements() {
     [
-      "dataStatusDot",
+      "statusDot",
       "sourceName",
       "sourceMeta",
+      "openFileButton",
       "fileInput",
-      "dropzone",
-      "lastUpdated",
       "periodLabel",
-      "yearHint",
-      "monthHint",
+      "updatedAt",
+      "heroTitle",
+      "heroDescription",
+      "heroNumberLabel",
+      "heroNumber",
+      "heroNumberFoot",
+      "resultCount",
+      "clearFilters",
       "yearChips",
       "monthChips",
       "statusChips",
-      "lensChips",
-      "activeFilters",
-      "filterResult",
-      "resetFilters",
-      "exportCsv",
-      "heroTitle",
-      "heroText",
-      "heroLastBalance",
-      "heroLastLabel",
-      "heroAverageBalance",
-      "heroAverageLabel",
-      "heroEssentialShare",
-      "heroEssentialLabel",
-      "rowCountTag",
-      "categoryCountTag",
-      "kpiBalance",
-      "kpiBalanceFoot",
-      "kpiIncomeAvg",
-      "kpiIncomeAvgFoot",
-      "kpiSpendAvg",
-      "kpiSpendAvgFoot",
-      "kpiEssential",
-      "kpiEssentialFoot",
-      "kpiFlexible",
-      "kpiFlexibleFoot",
-      "kpiPositive",
-      "kpiPositiveFoot",
-      "snapshotStatus",
-      "snapshotBalance",
-      "snapshotLabel",
-      "snapshotIncome",
-      "snapshotEssential",
-      "snapshotFlexible",
-      "snapshotSpend",
-      "snapshotNote",
-      "allocationCaption",
-      "allocationBar",
-      "allocationLegend",
-      "allocationNote",
+      "viewChips",
+      "incomeAverage",
+      "incomeFoot",
+      "spendAverage",
+      "spendFoot",
+      "balanceAverage",
+      "balanceFoot",
+      "positiveRate",
+      "positiveFoot",
       "cashflowNote",
-      "categoryChartTitle",
-      "insightsList",
-      "actionList",
+      "spendCommitment",
+      "essentialCommitment",
+      "flexibleCommitment",
+      "spendProgress",
+      "essentialProgress",
+      "flexibleProgress",
+      "healthSummary",
+      "categoryLegend",
+      "insightsGrid",
+      "exportButton",
       "categoryTableBody",
-      "tableCaption",
-      "dataTableBody",
-      "quickRead",
-      "essentialLegend",
-      "flexibleLegend",
-      "otherLegend",
-      "classificationNote",
-      "footerMethod",
+      "tableCount",
+      "monthlyTableBody",
+      "uploadZone",
+      "methodNote",
+      "emptyState",
+      "emptyUploadButton",
+      "emptyError",
       "toast"
     ].forEach((id) => {
-      els[id] = $(id);
+      elements[id] = byId(id);
     });
-
-    bindInteractions();
-    setupChartDefaults();
-    await tryDefaultFiles();
   }
 
-  function bindInteractions() {
-    [
-      [els.yearChips, "years"],
-      [els.monthChips, "months"],
-      [els.statusChips, "status"],
-      [els.lensChips, "lens"]
-    ].forEach(([container, group]) => {
-      container.addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-filter-value]");
+  function bindEvents() {
+    elements.openFileButton.addEventListener("click", openFilePicker);
+    elements.emptyUploadButton.addEventListener("click", openFilePicker);
+    elements.uploadZone.addEventListener("click", openFilePicker);
 
-        if (!button) {
-          return;
-        }
-
-        updateFilter(group, button.dataset.filterValue);
-      });
-    });
-
-    els.resetFilters.addEventListener("click", () => {
-      clearFilters();
-      showToast("Filtros limpos");
-    });
-
-    els.exportCsv.addEventListener("click", exportFilteredCsv);
-
-    els.dropzone.addEventListener("click", () => {
-      els.fileInput.click();
-    });
-
-    els.dropzone.addEventListener("keydown", (event) => {
+    elements.uploadZone.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        els.fileInput.click();
+        openFilePicker();
       }
     });
 
-    els.fileInput.addEventListener("change", (event) => {
+    elements.fileInput.addEventListener("change", (event) => {
       const file = event.target.files && event.target.files[0];
 
       if (file) {
-        loadFile(file);
+        loadLocalFile(file);
       }
 
       event.target.value = "";
     });
 
     ["dragenter", "dragover"].forEach((eventName) => {
-      els.dropzone.addEventListener(eventName, (event) => {
+      elements.uploadZone.addEventListener(eventName, (event) => {
         event.preventDefault();
-        els.dropzone.classList.add("is-dragging");
+        elements.uploadZone.classList.add("is-dragging");
       });
     });
 
     ["dragleave", "drop"].forEach((eventName) => {
-      els.dropzone.addEventListener(eventName, (event) => {
+      elements.uploadZone.addEventListener(eventName, (event) => {
         event.preventDefault();
-        els.dropzone.classList.remove("is-dragging");
+        elements.uploadZone.classList.remove("is-dragging");
       });
     });
 
-    els.dropzone.addEventListener("drop", (event) => {
+    elements.uploadZone.addEventListener("drop", (event) => {
       const file = event.dataTransfer.files && event.dataTransfer.files[0];
 
       if (file) {
-        loadFile(file);
+        loadLocalFile(file);
       }
     });
+
+    elements.yearChips.addEventListener("click", handleFilterClick);
+    elements.monthChips.addEventListener("click", handleFilterClick);
+    elements.statusChips.addEventListener("click", handleFilterClick);
+    elements.viewChips.addEventListener("click", handleFilterClick);
+
+    elements.clearFilters.addEventListener("click", () => {
+      state.filters.years.clear();
+      state.filters.months.clear();
+      state.filters.status = "all";
+      state.filters.view = "all";
+      renderFilters();
+      renderDashboard();
+      showToast("Filtros limpos.");
+    });
+
+    elements.exportButton.addEventListener("click", exportCurrentView);
   }
 
-  function setupChartDefaults() {
-    if (!window.Chart) {
+  function openFilePicker() {
+    elements.fileInput.click();
+  }
+
+  async function loadDefaultWorkbook() {
+    if (!window.XLSX) {
+      showLoadError(
+        "A biblioteca de leitura não carregou. Verifique sua conexão com a internet."
+      );
       return;
     }
 
-    Chart.defaults.color = "#9aa7c4";
-    Chart.defaults.font.family = '"DM Sans", sans-serif';
-    Chart.defaults.font.size = 10;
-    Chart.defaults.animation.duration = 500;
-    Chart.defaults.plugins.legend.display = false;
-    Chart.defaults.plugins.tooltip.backgroundColor = "#101a36";
-    Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,.15)";
-    Chart.defaults.plugins.tooltip.borderWidth = 1;
-    Chart.defaults.plugins.tooltip.padding = 10;
-    Chart.defaults.plugins.tooltip.titleFont = {
-      family: "Space Grotesk",
-      weight: "600"
-    };
-  }
-
-  function updateFilter(group, value) {
-    if (group === "years" || group === "months") {
-      const target = filterState[group];
-
-      if (value === "all") {
-        target.clear();
-      } else {
-        const numericValue = Number(value);
-        const parsedValue = Number.isNaN(numericValue)
-          ? value
-          : numericValue;
-
-        if (target.has(parsedValue)) {
-          target.delete(parsedValue);
-        } else {
-          target.add(parsedValue);
-        }
-      }
-    } else if (group === "status") {
-      filterState.status = value;
-    } else if (group === "lens") {
-      filterState.lens = value;
-    }
-
-    renderFilterControls();
-    renderAll();
-  }
-
-  function clearFilters() {
-    filterState.years.clear();
-    filterState.months.clear();
-    filterState.status = "all";
-    filterState.lens = "all";
-
-    renderFilterControls();
-    renderAll();
-  }
-
-  async function tryDefaultFiles() {
-    setSourceState(
+    setSourceStatus(
       "loading",
-      "Carregando arquivo da raiz…",
-      "Tentando encontrar sua planilha"
+      "Procurando planilha…",
+      "Buscando Financas.xlsx na raiz do projeto."
     );
 
-    for (const path of DEFAULT_FILES) {
+    const failures = [];
+
+    for (const url of DEFAULT_FILE_URLS) {
       try {
-        const response = await fetch(path, { cache: "no-store" });
+        const response = await fetch(url, { cache: "no-store" });
 
         if (!response.ok) {
+          failures.push(`${url}: ${response.status}`);
           continue;
         }
 
-        const data = await response.arrayBuffer();
-
-        await loadArrayBuffer(
-          data,
-          path.split("/").pop() || "Finanças.xlsx"
-        );
-
+        const buffer = await response.arrayBuffer();
+        const fileName = decodeURIComponent(url.split("/").pop());
+        parseWorkbook(buffer, fileName);
         return;
       } catch (error) {
-        /* Fallback para upload manual quando o arquivo não está acessível. */
+        failures.push(`${url}: ${error.message}`);
       }
     }
 
-    setSourceState(
-      "waiting",
-      "Nenhum arquivo carregado",
-      "Escolha uma planilha para começar"
-    );
-
-    renderEmpty();
+    console.info("Planilha padrão não encontrada:", failures);
+    showLoadError("");
   }
 
-  async function loadFile(file) {
+  async function loadLocalFile(file) {
     if (!/\.(xlsx|xls|csv)$/i.test(file.name)) {
-      showToast("Escolha um arquivo .xlsx, .xls ou .csv", true);
+      showToast("Escolha um arquivo XLSX, XLS ou CSV.", true);
+      return;
+    }
+
+    if (!window.XLSX) {
+      showToast("A biblioteca XLSX não está disponível.", true);
       return;
     }
 
     try {
-      setSourceState(
-        "loading",
-        file.name,
-        "Lendo e organizando os dados da casa…"
-      );
-
-      const data = await file.arrayBuffer();
-
-      await loadArrayBuffer(data, file.name);
-      showToast("Tabela carregada com sucesso");
+      setSourceStatus("loading", file.name, "Lendo a primeira aba…");
+      const buffer = await file.arrayBuffer();
+      parseWorkbook(buffer, file.name);
+      showToast("Planilha carregada com sucesso.");
     } catch (error) {
       console.error(error);
-
-      setSourceState(
-        "waiting",
-        "Não foi possível ler o arquivo",
-        "Verifique a aba e os cabeçalhos"
-      );
-
-      showToast(
-        "Não consegui ler essa planilha. Confira se ela tem mês e ano.",
-        true
-      );
+      setSourceStatus("error", "Erro ao ler a tabela", error.message);
+      elements.emptyState.hidden = false;
+      elements.emptyError.textContent = error.message;
+      showToast(error.message, true);
     }
   }
 
-  async function loadArrayBuffer(data, sourceName) {
-    if (!window.XLSX) {
-      throw new Error("Biblioteca XLSX indisponível");
-    }
-
-    const workbook = XLSX.read(data, {
+  function parseWorkbook(buffer, sourceName) {
+    const workbook = XLSX.read(buffer, {
       type: "array",
       cellDates: true
     });
 
     if (!workbook.SheetNames.length) {
-      throw new Error("Planilha sem abas");
+      throw new Error("A planilha não possui nenhuma aba.");
     }
 
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
 
-    const rawRows = XLSX.utils.sheet_to_json(sheet, {
+    const rawRows = XLSX.utils.sheet_to_json(firstSheet, {
       defval: null,
       raw: true
     });
 
-    const normalized = normalizeRows(rawRows);
-
-    if (!normalized.rows.length) {
-      throw new Error("Nenhuma linha válida encontrada");
-    }
+    const normalized = normalizeWorkbookRows(rawRows);
 
     state.rows = normalized.rows;
     state.categories = normalized.categories;
     state.categoryGroups = normalized.categoryGroups;
-    state.incomeSources = normalized.incomeSources;
+    state.incomeColumns = normalized.incomeColumns;
     state.sourceName = sourceName;
-    state.ignoredRows = normalized.ignoredRows;
 
-    filterState.years.clear();
-    filterState.months.clear();
-    filterState.status = "all";
-    filterState.lens = "all";
+    state.filters.years.clear();
+    state.filters.months.clear();
+    state.filters.status = "all";
+    state.filters.view = "all";
 
-    updateSidebarLegend();
-    renderFilterControls();
+    elements.emptyState.hidden = true;
+    elements.emptyError.textContent = "";
 
-    setSourceState(
+    setSourceStatus(
       "ready",
       sourceName,
-      `${state.rows.length} meses · ${state.categories.length} categorias`
+      `${state.rows.length} meses · ${state.categories.length} categorias · aba ${workbook.SheetNames[0]}`
     );
 
-    els.lastUpdated.textContent = `Atualizado às ${new Intl.DateTimeFormat(
-      "pt-BR",
-      {
-        hour: "2-digit",
-        minute: "2-digit"
-      }
-    ).format(new Date())}`;
+    elements.updatedAt.textContent = new Intl.DateTimeFormat("pt-BR", {
+      hour: "2-digit",
+      minute: "2-digit"
+    }).format(new Date());
 
-    renderAll();
+    elements.methodNote.textContent =
+      `Entradas = ${state.incomeColumns.map(labelize).join(" + ")} · ` +
+      "Gastos = soma das categorias · Saldo = entradas − gastos.";
+
+    renderFilters();
+    renderDashboard();
   }
 
-  function normalizeRows(rawRows) {
+  function normalizeWorkbookRows(rawRows) {
     if (!Array.isArray(rawRows) || !rawRows.length) {
-      return {
-        rows: [],
-        categories: [],
-        categoryGroups: {},
-        incomeSources: [],
-        ignoredRows: 0
-      };
+      throw new Error("A primeira aba está vazia.");
     }
 
-    const keys = Object.keys(rawRows[0] || {});
+    const headers = [
+      ...new Set(
+        rawRows.flatMap((row) => Object.keys(row || {}))
+      )
+    ];
 
-    const keyInfo = keys.map((key) => ({
-      key,
-      id: normalizeKey(key)
+    const headerInfo = headers.map((header) => ({
+      original: header,
+      normalized: normalizeKey(header)
     }));
 
-    const monthKey = findKey(keyInfo, [
-      "mes",
-      "month",
-      "periodo",
-      "period"
-    ]);
+    const monthColumn = findColumn(headerInfo, HEADER_ALIASES.month);
+    const yearColumn = findColumn(headerInfo, HEADER_ALIASES.year);
+    const totalColumn = findColumn(headerInfo, HEADER_ALIASES.total);
+    const balanceColumn = findColumn(headerInfo, HEADER_ALIASES.balance);
 
-    const yearKey = findKey(keyInfo, [
-      "ano",
-      "year"
-    ]);
-
-    const totalKey = findKey(keyInfo, [
-      "totalgasto",
-      "totaldespesa",
-      "gastototal",
-      "despesastotal"
-    ]);
-
-    const balanceKey = findKey(keyInfo, [
-      "balanca",
-      "saldo",
-      "balance"
-    ]);
-
-    if (!monthKey || !yearKey) {
-      throw new Error("A planilha precisa ter colunas de mês e ano");
+    if (!monthColumn || !yearColumn) {
+      throw new Error("Não encontrei as colunas Mês e Ano.");
     }
 
-    const incomeSources = keyInfo
-      .filter(({ id }) => {
-        return INCOME_ALIASES.some((alias) => {
+    const incomeColumns = headerInfo
+      .filter(({ normalized }) => {
+        return HEADER_ALIASES.income.some((alias) => {
           const normalizedAlias = normalizeKey(alias);
-
-          return (
-            id === normalizedAlias ||
-            id.includes(normalizedAlias)
-          );
+          return normalized === normalizedAlias || normalized.includes(normalizedAlias);
         });
       })
-      .map(({ key }) => key);
+      .map(({ original }) => original);
 
-    const excluded = new Set([
-      monthKey,
-      yearKey,
-      totalKey,
-      balanceKey,
-      ...incomeSources
-    ]);
+    if (!incomeColumns.length) {
+      throw new Error("Não encontrei colunas de entrada, como Renda ou Quintino.");
+    }
 
-    const categories = keyInfo
-      .filter(({ key, id }) => {
-        const isSummary = SUMMARY_ALIASES.some((alias) => {
-          return id === normalizeKey(alias);
-        });
+    const excludedColumns = new Set([
+      monthColumn,
+      yearColumn,
+      totalColumn,
+      balanceColumn,
+      ...incomeColumns
+    ].filter(Boolean));
 
-        const hasNumericValues = rawRows.some((row) => {
-          return isNumeric(row[key]);
-        });
+    const categories = headerInfo
+      .filter(({ original }) => {
+        if (excludedColumns.has(original)) {
+          return false;
+        }
 
-        return !excluded.has(key) && !isSummary && hasNumericValues;
+        return rawRows.some((row) => isNumeric(row[original]));
       })
-      .map(({ key }) => key);
+      .map(({ original }) => original);
 
-    const uniqueCategories = [...new Set(categories)];
+    if (!categories.length) {
+      throw new Error("Não encontrei colunas numéricas de despesas.");
+    }
 
     const categoryGroups = Object.fromEntries(
-      uniqueCategories.map((category) => {
-        return [category, inferGroup(category)];
-      })
+      categories.map((category) => [category, inferCategoryGroup(category)])
     );
 
-    const rows = [];
-    let ignoredRows = 0;
+    const rows = rawRows
+      .map((rawRow, rowIndex) => {
+        const monthIndex = parseMonth(rawRow[monthColumn]);
+        const year = Math.round(toNumber(rawRow[yearColumn]));
 
-    rawRows.forEach((raw, index) => {
-      const monthText = raw[monthKey];
-      const year = Math.round(toNumber(raw[yearKey]));
-      const monthIndex = monthIndexOf(monthText);
+        if (monthIndex < 0 || year < 1900) {
+          return null;
+        }
 
-      if (!monthText || !year || monthIndex < 0) {
-        ignoredRows += 1;
-        return;
-      }
+        const categoryValues = {};
 
-      const values = {};
+        categories.forEach((category) => {
+          categoryValues[category] = Math.max(0, toNumber(rawRow[category]));
+        });
 
-      uniqueCategories.forEach((category) => {
-        values[category] = toNumber(raw[category]);
-      });
+        const calculatedSpend = categories.reduce((total, category) => {
+          return total + categoryValues[category];
+        }, 0);
 
-      const spend = totalKey && isNumeric(raw[totalKey])
-        ? toNumber(raw[totalKey])
-        : uniqueCategories.reduce((sumValue, category) => {
-            return sumValue + values[category];
-          }, 0);
+        const informedSpend = totalColumn && isNumeric(rawRow[totalColumn])
+          ? toNumber(rawRow[totalColumn])
+          : calculatedSpend;
 
-      const income = incomeSources.reduce((sumValue, source) => {
-        return sumValue + toNumber(raw[source]);
-      }, 0);
+        const spend = informedSpend >= 0 ? informedSpend : calculatedSpend;
 
-      const balance = balanceKey && isNumeric(raw[balanceKey])
-        ? toNumber(raw[balanceKey])
-        : income - spend;
+        const income = incomeColumns.reduce((total, column) => {
+          return total + toNumber(rawRow[column]);
+        }, 0);
 
-      const groups = summarizeGroups(values, categoryGroups);
-      const date = new Date(year, monthIndex, 1);
+        const informedBalance = balanceColumn && isNumeric(rawRow[balanceColumn])
+          ? toNumber(rawRow[balanceColumn])
+          : income - spend;
 
-      rows.push({
-        id: `${year}-${String(monthIndex + 1).padStart(2, "0")}-${index}`,
-        month: MONTHS[monthIndex],
-        monthLabel: capitalize(MONTHS[monthIndex]),
-        monthIndex,
-        year,
-        date,
-        values,
-        groups,
-        spend,
-        income,
-        balance,
-        savingsRate: income ? balance / income : 0,
-        leader: findLeader(values)
-      });
-    });
+        const groups = {
+          essential: 0,
+          flexible: 0,
+          other: 0
+        };
 
-    rows.sort((first, second) => first.date - second.date);
+        categories.forEach((category) => {
+          const group = categoryGroups[category];
+          groups[group] += categoryValues[category];
+        });
+
+        return {
+          id: `${year}-${String(monthIndex + 1).padStart(2, "0")}-${rowIndex}`,
+          year,
+          monthIndex,
+          month: MONTHS[monthIndex],
+          date: new Date(year, monthIndex, 1),
+          income,
+          spend,
+          balance: informedBalance,
+          categories: categoryValues,
+          groups
+        };
+      })
+      .filter(Boolean)
+      .sort((first, second) => first.date - second.date);
+
+    if (!rows.length) {
+      throw new Error("Nenhuma linha válida com Mês e Ano foi encontrada.");
+    }
 
     return {
       rows,
-      categories: uniqueCategories,
+      categories,
       categoryGroups,
-      incomeSources,
-      ignoredRows
+      incomeColumns
     };
   }
 
-  function renderFilterControls() {
-    const years = uniqueSorted(state.rows.map((row) => row.year));
+  function renderFilters() {
+    const availableYears = uniqueSorted(state.rows.map((row) => row.year));
+    const availableMonths = uniqueSorted(state.rows.map((row) => row.monthIndex));
 
-    const availableMonths = uniqueSorted(
-      state.rows.map((row) => row.monthIndex)
-    );
-
-    els.yearChips.innerHTML = [
-      makeChip("Todos", "all", !filterState.years.size, "years"),
-      ...years.map((year) => {
-        return makeChip(
+    elements.yearChips.innerHTML = [
+      filterButton("Todos", "years", "all", state.filters.years.size === 0),
+      ...availableYears.map((year) => {
+        return filterButton(
           String(year),
+          "years",
           String(year),
-          filterState.years.has(year),
-          "years"
+          state.filters.years.has(year)
         );
       })
     ].join("");
 
-    els.monthChips.innerHTML = [
-      makeChip("Todos", "all", !filterState.months.size, "months"),
+    elements.monthChips.innerHTML = [
+      filterButton("Todos", "months", "all", state.filters.months.size === 0),
       ...availableMonths.map((monthIndex) => {
-        return makeChip(
-          capitalize(MONTH_LABELS[monthIndex]),
+        return filterButton(
+          MONTH_SHORT[monthIndex],
+          "months",
           String(monthIndex),
-          filterState.months.has(monthIndex),
-          "months"
+          state.filters.months.has(monthIndex)
         );
       })
     ].join("");
 
-    const statusOptions = [
+    elements.statusChips.innerHTML = [
       ["all", "Todos"],
-      ["positive", "No azul"],
+      ["positive", "Com sobra"],
       ["negative", "No vermelho"]
-    ];
+    ].map(([value, label]) => {
+      return segmentButton(
+        label,
+        "status",
+        value,
+        state.filters.status === value
+      );
+    }).join("");
 
-    els.statusChips.innerHTML = statusOptions
-      .map(([value, label]) => {
-        return makeChip(
-          label,
-          value,
-          filterState.status === value,
-          "status",
-          "segment-chip"
-        );
-      })
-      .join("");
-
-    const lensOptions = [
+    elements.viewChips.innerHTML = [
       ["all", "Tudo"],
-      ["essential", "Essenciais"],
-      ["flexible", "Flexíveis"],
-      ["other", "Outros"]
-    ];
-
-    els.lensChips.innerHTML = lensOptions
-      .map(([value, label]) => {
-        return makeChip(
-          label,
-          value,
-          filterState.lens === value,
-          "lens",
-          "segment-chip"
-        );
-      })
-      .join("");
-
-    els.yearHint.textContent = filterState.years.size
-      ? `${filterState.years.size} selecionado(s)`
-      : "Todos selecionados";
-
-    els.monthHint.textContent = filterState.months.size
-      ? `${filterState.months.size} selecionado(s)`
-      : "Todos selecionados";
-
-    renderActiveFilters();
+      ["essential", "Base da casa"],
+      ["flexible", "Flexível"]
+    ].map(([value, label]) => {
+      return segmentButton(
+        label,
+        "view",
+        value,
+        state.filters.view === value
+      );
+    }).join("");
   }
 
-  function makeChip(
-    label,
-    value,
-    active,
-    group,
-    extraClass = "choice-chip"
-  ) {
+  function filterButton(label, group, value, isActive) {
     return `
       <button
+        class="filter-chip${isActive ? " is-active" : ""}"
         type="button"
-        class="${extraClass}${active ? " is-active" : ""}"
         data-filter-group="${group}"
-        data-filter-value="${escapeHtml(value)}"
-        aria-pressed="${active}"
+        data-filter-value="${value}"
+        aria-pressed="${isActive}"
       >${escapeHtml(label)}</button>
     `;
   }
 
-  function renderActiveFilters() {
-    const tags = [];
+  function segmentButton(label, group, value, isActive) {
+    return `
+      <button
+        class="segment-chip${isActive ? " is-active" : ""}"
+        type="button"
+        data-filter-group="${group}"
+        data-filter-value="${value}"
+        aria-pressed="${isActive}"
+      >${escapeHtml(label)}</button>
+    `;
+  }
 
-    if (filterState.years.size) {
-      tags.push(
-        `Anos: ${[...filterState.years].sort().join(", ")}`
-      );
+  function handleFilterClick(event) {
+    const button = event.target.closest("button[data-filter-group]");
+
+    if (!button) {
+      return;
     }
 
-    if (filterState.months.size) {
-      tags.push(
-        `Meses: ${[...filterState.months]
-          .sort((a, b) => a - b)
-          .map((month) => capitalize(MONTH_LABELS[month]))
-          .join(", ")}`
-      );
+    const group = button.dataset.filterGroup;
+    const value = button.dataset.filterValue;
+
+    if (group === "years" || group === "months") {
+      const targetSet = state.filters[group];
+
+      if (value === "all") {
+        targetSet.clear();
+      } else {
+        const numericValue = Number(value);
+
+        if (targetSet.has(numericValue)) {
+          targetSet.delete(numericValue);
+        } else {
+          targetSet.add(numericValue);
+        }
+      }
     }
 
-    if (filterState.status !== "all") {
-      tags.push(
-        filterState.status === "positive"
-          ? "Somente meses no azul"
-          : "Somente meses no vermelho"
-      );
+    if (group === "status") {
+      state.filters.status = value;
     }
 
-    if (filterState.lens !== "all") {
-      tags.push(
-        `Lente: ${GROUP_RULES[filterState.lens].label}`
-      );
+    if (group === "view") {
+      state.filters.view = value;
     }
 
-    els.activeFilters.innerHTML = tags.length
-      ? tags
-          .map(
-            (tag) =>
-              `<span class="active-filter">${escapeHtml(tag)}</span>`
-          )
-          .join("")
-      : `<span class="active-filter is-empty">Nenhum filtro aplicado · mostrando todos os dados</span>`;
+    renderFilters();
+    renderDashboard();
   }
 
   function getFilteredRows() {
     return state.rows.filter((row) => {
       const yearMatches =
-        !filterState.years.size ||
-        filterState.years.has(row.year);
+        state.filters.years.size === 0 ||
+        state.filters.years.has(row.year);
 
       const monthMatches =
-        !filterState.months.size ||
-        filterState.months.has(row.monthIndex);
+        state.filters.months.size === 0 ||
+        state.filters.months.has(row.monthIndex);
 
       const statusMatches =
-        filterState.status === "all" ||
-        (filterState.status === "positive"
-          ? row.balance > 0
+        state.filters.status === "all" ||
+        (state.filters.status === "positive"
+          ? row.balance >= 0
           : row.balance < 0);
 
       return yearMatches && monthMatches && statusMatches;
     });
   }
 
-  function aggregate(rows) {
-    const income = sum(rows, (row) => row.income);
-    const spend = sum(rows, (row) => row.spend);
-    const balance = sum(rows, (row) => row.balance);
+  function calculateMetrics(rows) {
+    const count = rows.length;
+    const totalIncome = sum(rows, (row) => row.income);
+    const totalSpend = sum(rows, (row) => row.spend);
+    const totalBalance = sum(rows, (row) => row.balance);
+    const averageIncome = count ? totalIncome / count : 0;
+    const averageSpend = count ? totalSpend / count : 0;
+    const averageBalance = count ? totalBalance / count : 0;
+    const medianIncome = median(rows.map((row) => row.income));
 
-    const averageIncome = rows.length ? income / rows.length : 0;
-    const averageSpend = rows.length ? spend / rows.length : 0;
-    const averageBalance = rows.length ? balance / rows.length : 0;
+    const groupTotals = {
+      essential: sum(rows, (row) => row.groups.essential),
+      flexible: sum(rows, (row) => row.groups.flexible),
+      other: sum(rows, (row) => row.groups.other)
+    };
 
-    const categoryTotals = Object.fromEntries(
-      state.categories.map((category) => {
-        return [
-          category,
-          sum(rows, (row) => row.values[category] || 0)
-        ];
-      })
-    );
+    const groupAverages = {
+      essential: count ? groupTotals.essential / count : 0,
+      flexible: count ? groupTotals.flexible / count : 0,
+      other: count ? groupTotals.other / count : 0
+    };
 
-    const groupTotals = Object.fromEntries(
-      GROUP_ORDER.map((group) => {
-        return [
-          group,
-          sum(rows, (row) => row.groups[group] || 0)
-        ];
-      })
-    );
-
-    const averageGroups = Object.fromEntries(
-      GROUP_ORDER.map((group) => {
-        return [
-          group,
-          rows.length ? groupTotals[group] / rows.length : 0
-        ];
-      })
-    );
-
-    const positive = rows.filter((row) => row.balance > 0).length;
-    const negative = rows.filter((row) => row.balance < 0).length;
-
-    const savingsRate = income ? balance / income : 0;
-    const essentialIncomeShare = income
-      ? groupTotals.essential / income
-      : 0;
-
-    const flexibleIncomeShare = income
-      ? groupTotals.flexible / income
-      : 0;
-
-    const essentialSpendShare = spend
-      ? groupTotals.essential / spend
-      : 0;
-
-    const flexibleSpendShare = spend
-      ? groupTotals.flexible / spend
-      : 0;
-
-    const incomeValues = rows.map((row) => row.income);
-    const incomeMedian = median(incomeValues);
-    const incomeStd = standardDeviation(incomeValues);
-
+    const positiveMonths = rows.filter((row) => row.balance >= 0).length;
+    const incomeStandardDeviation = standardDeviation(rows.map((row) => row.income));
     const incomeVolatility = averageIncome
-      ? incomeStd / averageIncome
+      ? incomeStandardDeviation / averageIncome
       : 0;
 
-    const firstWindowSize = Math.max(
-      1,
-      Math.floor(rows.length / 3)
+    const categoryStats = state.categories.map((category) => {
+      const total = sum(rows, (row) => row.categories[category] || 0);
+      const recentRows = rows.slice(-Math.min(3, count));
+      const previousRows = rows.slice(
+        -Math.min(6, count),
+        -Math.min(3, count)
+      );
+      const recentAverage = average(recentRows, (row) => row.categories[category] || 0);
+      const previousAverage = average(previousRows, (row) => row.categories[category] || 0);
+      const trend = previousAverage
+        ? (recentAverage - previousAverage) / previousAverage
+        : 0;
+
+      return {
+        name: category,
+        group: state.categoryGroups[category],
+        total,
+        average: count ? total / count : 0,
+        share: totalSpend ? total / totalSpend : 0,
+        trend
+      };
+    }).sort((first, second) => second.total - first.total);
+
+    const recentWindow = rows.slice(-Math.min(3, count));
+    const previousWindow = rows.slice(
+      -Math.min(6, count),
+      -Math.min(3, count)
     );
+    const recentSpendAverage = average(recentWindow, (row) => row.spend);
+    const previousSpendAverage = average(previousWindow, (row) => row.spend);
+    const recentSpendChange = previousSpendAverage
+      ? (recentSpendAverage - previousSpendAverage) / previousSpendAverage
+      : 0;
 
-    const firstWindow = rows.slice(0, firstWindowSize);
-    const recentWindow = rows.slice(-firstWindowSize);
+    const bestMonth = count
+      ? rows.reduce((best, row) => row.balance > best.balance ? row : best, rows[0])
+      : null;
 
-    const firstWindowSpend = average(
-      firstWindow,
-      (row) => row.spend
-    );
+    const worstMonth = count
+      ? rows.reduce((worst, row) => row.balance < worst.balance ? row : worst, rows[0])
+      : null;
 
-    const recentWindowSpend = average(
-      recentWindow,
-      (row) => row.spend
-    );
+    const annual = {};
 
-    const firstWindowBalance = average(
-      firstWindow,
-      (row) => row.balance
-    );
-
-    const recentWindowBalance = average(
-      recentWindow,
-      (row) => row.balance
-    );
-
-    const categoryStats = state.categories
-      .map((category) => {
-        const total = categoryTotals[category] || 0;
-
-        const firstAverage = average(
-          firstWindow,
-          (row) => row.values[category] || 0
-        );
-
-        const recentAverage = average(
-          recentWindow,
-          (row) => row.values[category] || 0
-        );
-
-        const trend = firstAverage
-          ? (recentAverage - firstAverage) / firstAverage
-          : recentAverage > 0
-            ? 1
-            : 0;
-
-        return {
-          category,
-          group: state.categoryGroups[category] || "other",
-          total,
-          average: rows.length ? total / rows.length : 0,
-          share: spend ? total / spend : 0,
-          trend,
-          firstAverage,
-          recentAverage
+    rows.forEach((row) => {
+      if (!annual[row.year]) {
+        annual[row.year] = {
+          count: 0,
+          income: 0,
+          spend: 0,
+          balance: 0
         };
-      })
-      .sort((first, second) => second.total - first.total);
+      }
 
-    const yearAverages = groupByYearAverage(rows);
-    const monthAverages = groupByMonthAverage(rows);
+      annual[row.year].count += 1;
+      annual[row.year].income += row.income;
+      annual[row.year].spend += row.spend;
+      annual[row.year].balance += row.balance;
+    });
+
+    Object.values(annual).forEach((yearData) => {
+      yearData.income /= yearData.count;
+      yearData.spend /= yearData.count;
+      yearData.balance /= yearData.count;
+    });
+
+    const extraordinaryIncomeMonths = rows.filter((row) => {
+      return medianIncome > 0 && row.income > medianIncome * 1.35;
+    }).length;
 
     return {
-      income,
-      spend,
-      balance,
+      count,
+      totalIncome,
+      totalSpend,
+      totalBalance,
       averageIncome,
       averageSpend,
       averageBalance,
-      categoryTotals,
-      categoryStats,
+      medianIncome,
+      recurringCapacity: medianIncome - averageSpend,
       groupTotals,
-      averageGroups,
-      positive,
-      negative,
-      savingsRate,
-      positiveRate: rows.length ? positive / rows.length : 0,
-      essentialIncomeShare,
-      flexibleIncomeShare,
-      essentialSpendShare,
-      flexibleSpendShare,
-      incomeMedian,
-      incomeStd,
+      groupAverages,
+      positiveMonths,
+      positiveRate: count ? positiveMonths / count : 0,
+      spendCommitment: averageIncome ? averageSpend / averageIncome : 0,
+      essentialCommitment: averageIncome ? groupAverages.essential / averageIncome : 0,
+      flexibleCommitment: averageIncome ? groupAverages.flexible / averageIncome : 0,
       incomeVolatility,
-      minIncome: incomeValues.length
-        ? Math.min(...incomeValues)
-        : 0,
-      maxIncome: incomeValues.length
-        ? Math.max(...incomeValues)
-        : 0,
-      extraordinaryIncomeCount: incomeValues.filter((value) => {
-        return incomeMedian > 0 && value > incomeMedian * 1.35;
-      }).length,
-      firstWindowSpend,
-      recentWindowSpend,
-      firstWindowBalance,
-      recentWindowBalance,
-      recentSpendChange: firstWindowSpend
-        ? (recentWindowSpend - firstWindowSpend) / firstWindowSpend
-        : 0,
-      recentBalanceChange: recentWindowBalance - firstWindowBalance,
-      yearAverages,
-      monthAverages,
-      focusCategories: getFocusCategories(categoryStats)
+      extraordinaryIncomeMonths,
+      categoryStats,
+      recentSpendAverage,
+      previousSpendAverage,
+      recentSpendChange,
+      bestMonth,
+      worstMonth,
+      annual
     };
   }
 
-  function renderAll() {
-    if (!state.rows.length) {
-      renderEmpty();
-      return;
-    }
-
+  function renderDashboard() {
     const rows = getFilteredRows();
-    const metrics = aggregate(rows);
+    const metrics = calculateMetrics(rows);
 
-    state.filtered = rows;
+    state.filteredRows = rows;
+    elements.resultCount.textContent = `${rows.length} ${rows.length === 1 ? "mês" : "meses"}`;
+    elements.periodLabel.textContent = getPeriodLabel(rows);
 
-    els.filterResult.textContent = `${rows.length} ${
-      rows.length === 1 ? "mês" : "meses"
-    }`;
+    if (!rows.length) {
+      renderNoMatches();
+      return;
+    }
 
-    els.periodLabel.textContent = getPeriodLabel(rows);
-    els.footerMethod.textContent = buildFooterMethod();
-
-    renderHero(rows, metrics);
-    renderKpis(rows, metrics);
-    renderSnapshot(rows, metrics);
-    renderAllocation(metrics);
+    renderHero(metrics);
+    renderKpis(metrics);
+    renderHealth(metrics);
     renderCharts(rows, metrics);
-    renderInsights(rows, metrics);
-    renderActions(rows, metrics);
+    renderInsights(metrics);
     renderCategoryTable(metrics);
-    renderTable(rows);
-    updateQuickRead(rows, metrics);
+    renderMonthlyTable(rows);
   }
 
-  function renderHero(rows, metrics) {
-    if (!rows.length) {
-      els.heroTitle.textContent = "Nenhum mês nesse recorte.";
+  function renderHero(metrics) {
+    const hasPositiveAverage = metrics.averageBalance >= 0;
+    const recurringIsPositive = metrics.recurringCapacity >= 0;
 
-      els.heroText.textContent =
-        "Amplie os anos, meses ou a situação do mês para voltar a enxergar a rotina da casa.";
-
-      els.heroLastBalance.textContent = "—";
-      els.heroLastLabel.textContent = "—";
-      els.heroAverageBalance.textContent = "—";
-      els.heroAverageLabel.textContent = "—";
-      els.heroEssentialShare.textContent = "—";
-      els.heroEssentialLabel.textContent = "da renda média";
-
-      return;
+    if (hasPositiveAverage && !recurringIsPositive && metrics.extraordinaryIncomeMonths) {
+      elements.heroTitle.textContent = "A sobra existe, mas depende dos meses de renda mais alta.";
+      elements.heroDescription.textContent =
+        `A renda mediana é ${money.format(metrics.medianIncome)}, enquanto o gasto médio é ` +
+        `${money.format(metrics.averageSpend)}. ${metrics.extraordinaryIncomeMonths} mês(es) de entrada extraordinária elevam a média.`;
+    } else if (hasPositiveAverage) {
+      elements.heroTitle.textContent = "O período fecha no azul — agora o foco é consistência.";
+      elements.heroDescription.textContent =
+        `A casa preservou ${percentage.format(metrics.positiveRate)} dos meses com saldo positivo. ` +
+        `A base recorrente consome ${percentage.format(metrics.essentialCommitment)} da entrada média.`;
+    } else {
+      elements.heroTitle.textContent = "A rotina da casa ainda gasta mais do que recebe.";
+      elements.heroDescription.textContent =
+        `Faltaram, em média, ${money.format(Math.abs(metrics.averageBalance))} por mês. ` +
+        "Separe o peso fixo da casa dos gastos flexíveis antes de definir qualquer corte.";
     }
 
-    const recent = rows[rows.length - 1];
-    const averageTone = metrics.averageBalance >= 0;
-
-    els.heroTitle.textContent = averageTone
-      ? "A média do recorte deixa uma sobra."
-      : "A média do recorte pede espaço.";
-
-    const lensText = filterState.lens === "all"
-      ? "contas essenciais e gastos flexíveis"
-      : `a lente de ${GROUP_RULES[filterState.lens].label.toLowerCase()}`;
-
-    els.heroText.textContent =
-      `Em ${rows.length} ${
-        rows.length === 1 ? "mês" : "meses"
-      }, ` +
-      `a leitura compara ${lensText} com todas as entradas registradas. ` +
-      `Use os chips para cruzar anos sem perder a visão mensal.`;
-
-    els.heroLastBalance.textContent = currency.format(
-      recent.balance
-    );
-
-    els.heroLastLabel.textContent =
-      `${capitalize(recent.month)} ${recent.year} · ${
-        recent.balance >= 0 ? "no azul" : "no vermelho"
-      }`;
-
-    els.heroAverageBalance.textContent = currency.format(
-      metrics.averageBalance
-    );
-
-    els.heroAverageLabel.textContent =
-      `${currency.format(metrics.balance)} acumulados`;
-
-    els.heroEssentialShare.textContent = percent.format(
-      metrics.essentialIncomeShare
-    );
-
-    els.heroEssentialLabel.textContent = "da renda média";
+    elements.heroNumberLabel.textContent = "Saldo médio mensal";
+    elements.heroNumber.textContent = money.format(metrics.averageBalance);
+    elements.heroNumber.classList.toggle("is-positive", hasPositiveAverage);
+    elements.heroNumber.classList.toggle("is-negative", !hasPositiveAverage);
+    elements.heroNumberFoot.textContent =
+      `${money.format(metrics.totalBalance)} acumulados · ` +
+      `capacidade recorrente estimada em ${money.format(metrics.recurringCapacity)}/mês`;
   }
 
-  function renderKpis(rows, metrics) {
-    if (!rows.length) {
-      [
-        "kpiBalance",
-        "kpiIncomeAvg",
-        "kpiSpendAvg",
-        "kpiEssential",
-        "kpiFlexible",
-        "kpiPositive"
-      ].forEach((id) => {
-        els[id].textContent = "—";
-      });
+  function renderKpis(metrics) {
+    elements.incomeAverage.textContent = money.format(metrics.averageIncome);
+    elements.incomeFoot.textContent = `Mediana mensal: ${money.format(metrics.medianIncome)}`;
 
-      els.kpiBalanceFoot.textContent = "Nenhum mês no recorte";
-      els.kpiIncomeAvgFoot.textContent = "Nenhum mês no recorte";
-      els.kpiSpendAvgFoot.textContent = "Nenhum mês no recorte";
-      els.kpiEssentialFoot.textContent = "Nenhum mês no recorte";
-      els.kpiFlexibleFoot.textContent = "Nenhum mês no recorte";
-      els.kpiPositiveFoot.textContent = "Nenhum mês no recorte";
+    elements.spendAverage.textContent = money.format(metrics.averageSpend);
+    elements.spendFoot.textContent = `${percentage.format(metrics.spendCommitment)} da entrada média`;
 
-      return;
-    }
+    elements.balanceAverage.textContent = money.format(metrics.averageBalance);
+    elements.balanceFoot.textContent = `${money.format(metrics.totalBalance)} no período`;
+    elements.balanceAverage.classList.toggle("is-positive", metrics.averageBalance >= 0);
+    elements.balanceAverage.classList.toggle("is-negative", metrics.averageBalance < 0);
 
-    els.kpiBalance.textContent = currency.format(
-      metrics.averageBalance
-    );
-
-    els.kpiBalanceFoot.textContent =
-      `Saldo acumulado ${currency.format(metrics.balance)}`;
-
-    els.kpiIncomeAvg.textContent = currency.format(
-      metrics.averageIncome
-    );
-
-    els.kpiIncomeAvgFoot.textContent =
-      `${incomeVolatilityLabel(metrics.incomeVolatility)} · ${
-        state.incomeSources.length || 1
-      } fonte(s)`;
-
-    els.kpiSpendAvg.textContent = currency.format(
-      metrics.averageSpend
-    );
-
-    els.kpiSpendAvgFoot.textContent =
-      `${percent.format(
-        metrics.averageIncome
-          ? metrics.averageSpend / metrics.averageIncome
-          : 0
-      )} da entrada média`;
-
-    els.kpiEssential.textContent = currency.format(
-      metrics.averageGroups.essential
-    );
-
-    els.kpiEssentialFoot.textContent =
-      `${percent.format(metrics.essentialIncomeShare)} da renda · ${
-        percent.format(metrics.essentialSpendShare)
-      } dos gastos`;
-
-    els.kpiFlexible.textContent = currency.format(
-      metrics.averageGroups.flexible
-    );
-
-    els.kpiFlexibleFoot.textContent =
-      `Cenário -10%: libera ${currency.format(
-        metrics.averageGroups.flexible * 0.1
-      )} / mês`;
-
-    els.kpiPositive.textContent =
-      `${metrics.positive} / ${rows.length}`;
-
-    els.kpiPositiveFoot.textContent =
-      `${percent.format(metrics.positiveRate)} dos meses selecionados`;
-
-    els.kpiBalance.classList.toggle(
-      "is-positive",
-      metrics.averageBalance >= 0
-    );
+    elements.positiveRate.textContent = percentage.format(metrics.positiveRate);
+    elements.positiveFoot.textContent = `${metrics.positiveMonths} de ${metrics.count} meses`;
   }
 
-  function renderSnapshot(rows, metrics) {
-    if (!rows.length) {
-      els.snapshotStatus.textContent = "sem dados";
-      els.snapshotStatus.classList.remove("is-negative");
-      els.snapshotBalance.textContent = "—";
-      els.snapshotLabel.textContent = "—";
+  function renderHealth(metrics) {
+    elements.spendCommitment.textContent = percentage.format(metrics.spendCommitment);
+    elements.essentialCommitment.textContent = percentage.format(metrics.essentialCommitment);
+    elements.flexibleCommitment.textContent = percentage.format(metrics.flexibleCommitment);
 
-      [
-        "snapshotIncome",
-        "snapshotEssential",
-        "snapshotFlexible",
-        "snapshotSpend"
-      ].forEach((id) => {
-        els[id].textContent = "—";
-      });
+    setProgress(elements.spendProgress, metrics.spendCommitment);
+    setProgress(elements.essentialProgress, metrics.essentialCommitment);
+    setProgress(elements.flexibleProgress, metrics.flexibleCommitment);
 
-      els.snapshotNote.textContent =
-        "Amplie o recorte para obter um retrato mensal.";
-
-      return;
+    if (metrics.spendCommitment > 1) {
+      elements.healthSummary.textContent =
+        `Os gastos médios superam a entrada média em ${percentage.format(metrics.spendCommitment - 1)}. ` +
+        `A base da casa custa ${money.format(metrics.groupAverages.essential)} e os flexíveis ${money.format(metrics.groupAverages.flexible)} por mês.`;
+    } else {
+      const available = Math.max(0, metrics.averageIncome - metrics.averageSpend);
+      elements.healthSummary.textContent =
+        `Depois dos gastos médios, restam ${money.format(available)} por mês. ` +
+        `Uma redução simulada de 10% nos flexíveis liberaria ${money.format(metrics.groupAverages.flexible * 0.1)} mensais.`;
     }
-
-    const recent = rows[rows.length - 1];
-    const difference = recent.balance - metrics.averageBalance;
-    const statusPositive = recent.balance >= 0;
-
-    els.snapshotStatus.textContent = statusPositive
-      ? "no azul"
-      : "no vermelho";
-
-    els.snapshotStatus.classList.toggle(
-      "is-negative",
-      !statusPositive
-    );
-
-    els.snapshotBalance.textContent = currency.format(
-      recent.balance
-    );
-
-    els.snapshotLabel.textContent =
-      `${capitalize(recent.month)} ${recent.year}`;
-
-    els.snapshotIncome.textContent = currency.format(
-      recent.income
-    );
-
-    els.snapshotEssential.textContent = currency.format(
-      recent.groups.essential
-    );
-
-    els.snapshotFlexible.textContent = currency.format(
-      recent.groups.flexible
-    );
-
-    els.snapshotSpend.textContent = currency.format(
-      recent.spend
-    );
-
-    els.snapshotNote.textContent = difference >= 0
-      ? `${currency.format(
-          Math.abs(difference)
-        )} acima da sobra média do recorte.`
-      : `${currency.format(
-          Math.abs(difference)
-        )} abaixo da sobra média do recorte.`;
-  }
-
-  function renderAllocation(metrics) {
-    const total = metrics.averageSpend;
-
-    if (!total) {
-      els.allocationBar.innerHTML = "";
-
-      els.allocationLegend.innerHTML =
-        `<span class="active-filter is-empty">Sem gastos no recorte.</span>`;
-
-      els.allocationCaption.textContent = "sem dados";
-
-      return;
-    }
-
-    els.allocationCaption.textContent =
-      currency.format(total) + " / mês";
-
-    els.allocationBar.innerHTML = GROUP_ORDER.map((group) => {
-      const width =
-        clamp(metrics.averageGroups[group] / total, 0, 1) * 100;
-
-      return `
-        <span
-          class="allocation-${group}"
-          style="width:${width}%"
-          title="${GROUP_RULES[group].label}: ${currency.format(
-            metrics.averageGroups[group]
-          )}"
-        ></span>
-      `;
-    }).join("");
-
-    els.allocationLegend.innerHTML = GROUP_ORDER.map((group) => {
-      const share = total
-        ? metrics.averageGroups[group] / total
-        : 0;
-
-      return `
-        <div class="allocation-item">
-          <div>
-            <i class="${group}-color"></i>
-            <span>${GROUP_RULES[group].shortLabel}</span>
-          </div>
-          <strong>
-            ${currency.format(metrics.averageGroups[group])} ·
-            ${percent.format(share)}
-          </strong>
-        </div>
-      `;
-    }).join("");
-
-    els.allocationNote.textContent =
-      filterState.lens === "all"
-        ? "Essenciais são contas recorrentes; flexíveis são categorias que variam mais mês a mês."
-        : `A lente selecionada destaca ${
-            GROUP_RULES[filterState.lens].label.toLowerCase()
-          } no gráfico de categorias.`;
   }
 
   function renderCharts(rows, metrics) {
     if (!window.Chart) {
+      elements.cashflowNote.textContent = "Gráficos indisponíveis: Chart.js não carregou.";
       return;
     }
 
-    if (!rows.length) {
-      destroyCharts();
-      return;
-    }
+    const labels = rows.map((row) => `${MONTH_SHORT[row.monthIndex]} ${String(row.year).slice(-2)}`);
 
-    const labels = rows.map((row) => {
-      return `${MONTH_LABELS[row.monthIndex]} ${String(
-        row.year
-      ).slice(2)}`;
-    });
-
-    updateChart("cashflow", $("cashflowChart"), {
+    replaceChart("cashflow", byId("cashflowChart"), {
       type: "bar",
       data: {
         labels,
         datasets: [
-          barDataset(
-            "Essenciais",
-            rows.map((row) => row.groups.essential),
-            "rgba(255,193,120,.75)"
-          ),
-          barDataset(
-            "Flexíveis",
-            rows.map((row) => row.groups.flexible),
-            "rgba(120,217,233,.72)"
-          ),
-          barDataset(
-            "Outros",
-            rows.map((row) => row.groups.other),
-            "rgba(156,142,255,.68)"
-          ),
           {
-            type: "line",
             label: "Entradas",
             data: rows.map((row) => row.income),
-            borderColor: "#f4f7ff",
-            backgroundColor: "rgba(244,247,255,.12)",
-            borderWidth: 2.2,
-            tension: 0.35,
-            pointRadius: 0,
-            pointHoverRadius: 4,
-            pointHoverBackgroundColor: "#f4f7ff",
-            yAxisID: "income"
-          }
-        ]
-      },
-      options: cashflowOptions()
-    });
-
-    const focusEntries = metrics.focusCategories.slice(0, 8);
-
-    els.categoryChartTitle.textContent =
-      filterState.lens === "all"
-        ? "Categorias que mais pesam"
-        : `Categorias · ${GROUP_RULES[filterState.lens].label}`;
-
-    updateChart("category", $("categoryChart"), {
-      type: "bar",
-      data: {
-        labels: focusEntries.map((entry) =>
-          labelize(entry.category)
-        ),
-        datasets: [
-          {
-            label: "Total gasto",
-            data: focusEntries.map((entry) => entry.total),
-            backgroundColor: focusEntries.map((entry, index) => {
-              return filterState.lens === "all"
-                ? palette[index % palette.length]
-                : GROUP_RULES[filterState.lens].color;
-            }),
+            backgroundColor: "rgba(103, 219, 229, 0.62)",
+            borderColor: "#67dbe5",
+            borderWidth: 1,
             borderRadius: 5,
-            maxBarThickness: 22
-          }
-        ]
-      },
-      options: categoryOptions()
-    });
-
-    const years = Object.keys(metrics.yearAverages);
-    const yearGroups = Object.values(metrics.yearAverages);
-
-    updateChart("year", $("yearChart"), {
-      type: "bar",
-      data: {
-        labels: years,
-        datasets: [
-          barDataset(
-            "Entrada média",
-            yearGroups.map((group) => group.income),
-            "rgba(120,217,233,.78)"
-          ),
-          barDataset(
-            "Gasto médio",
-            yearGroups.map((group) => group.spend),
-            "rgba(255,131,180,.72)"
-          ),
-          barDataset(
-            "Sobra média",
-            yearGroups.map((group) => group.balance),
-            "rgba(161,141,255,.82)"
-          )
-        ]
-      },
-      options: groupedBarOptions()
-    });
-
-    const monthGroups = metrics.monthAverages;
-
-    const monthData = MONTHS.map((month, index) => {
-      return monthGroups[index]
-        ? monthGroups[index].balance
-        : null;
-    });
-
-    updateChart("seasonality", $("seasonalityChart"), {
-      type: "bar",
-      data: {
-        labels: MONTH_LABELS,
-        datasets: [
+            maxBarThickness: 18
+          },
           {
-            label: "Saldo médio",
-            data: monthData,
-            backgroundColor: monthData.map((value) => {
-              if (value === null) {
-                return "rgba(255,255,255,.08)";
-              }
-
-              return value >= 0
-                ? "rgba(95,225,174,.72)"
-                : "rgba(255,140,157,.72)";
-            }),
+            label: "Gastos",
+            data: rows.map((row) => row.spend),
+            backgroundColor: "rgba(255, 134, 173, 0.55)",
+            borderColor: "#ff86ad",
+            borderWidth: 1,
             borderRadius: 5,
-            maxBarThickness: 22
+            maxBarThickness: 18
+          },
+          {
+            type: "line",
+            label: "Saldo",
+            data: rows.map((row) => row.balance),
+            borderColor: "#f6f7fb",
+            backgroundColor: "rgba(246, 247, 251, 0.1)",
+            pointBackgroundColor: rows.map((row) => row.balance >= 0 ? "#62dba8" : "#ff7d91"),
+            pointBorderWidth: 0,
+            pointRadius: rows.length > 30 ? 0 : 2.5,
+            pointHoverRadius: 5,
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: "balance"
           }
         ]
       },
-      options: seasonalityOptions()
+      options: cashflowChartOptions()
     });
-  }
 
-  function renderInsights(rows, metrics) {
-    if (!rows.length) {
-      els.insightsList.innerHTML = `
-        <div class="insight-card">
-          <strong>Sem dados nesse recorte</strong>
-          <p>Amplie os anos, meses ou a situação do mês para continuar.</p>
+    const visibleCategories = metrics.categoryStats
+      .filter((category) => {
+        return state.filters.view === "all" || category.group === state.filters.view;
+      })
+      .filter((category) => category.total > 0);
+
+    replaceChart("category", byId("categoryChart"), {
+      type: "doughnut",
+      data: {
+        labels: visibleCategories.map((category) => labelize(category.name)),
+        datasets: [{
+          data: visibleCategories.map((category) => category.total),
+          backgroundColor: visibleCategories.map((category, index) => CATEGORY_COLORS[index % CATEGORY_COLORS.length]),
+          borderColor: "rgba(8, 11, 22, 0.75)",
+          borderWidth: 3,
+          hoverOffset: 6
+        }]
+      },
+      options: doughnutChartOptions()
+    });
+
+    elements.categoryLegend.innerHTML = visibleCategories.slice(0, 7).map((category, index) => {
+      return `
+        <div class="legend-item">
+          <i style="background:${CATEGORY_COLORS[index % CATEGORY_COLORS.length]}"></i>
+          <span>${escapeHtml(labelize(category.name))}</span>
+          <strong>${percentage.format(category.share)}</strong>
         </div>
       `;
+    }).join("");
 
-      return;
-    }
+    const annualEntries = Object.entries(metrics.annual)
+      .sort(([firstYear], [secondYear]) => Number(firstYear) - Number(secondYear));
 
-    const best = rows.reduce((current, row) => {
-      return row.balance > current.balance ? row : current;
-    }, rows[0]);
+    replaceChart("year", byId("yearChart"), {
+      type: "bar",
+      data: {
+        labels: annualEntries.map(([year]) => year),
+        datasets: [
+          {
+            label: "Entrada média",
+            data: annualEntries.map(([, values]) => values.income),
+            backgroundColor: "rgba(103, 219, 229, 0.72)",
+            borderRadius: 5,
+            maxBarThickness: 28
+          },
+          {
+            label: "Gasto médio",
+            data: annualEntries.map(([, values]) => values.spend),
+            backgroundColor: "rgba(255, 134, 173, 0.62)",
+            borderRadius: 5,
+            maxBarThickness: 28
+          },
+          {
+            label: "Saldo médio",
+            data: annualEntries.map(([, values]) => values.balance),
+            backgroundColor: annualEntries.map(([, values]) => values.balance >= 0
+              ? "rgba(98, 219, 168, 0.72)"
+              : "rgba(255, 125, 145, 0.72)"),
+            borderRadius: 5,
+            maxBarThickness: 28
+          }
+        ]
+      },
+      options: yearChartOptions()
+    });
 
-    const worst = rows.reduce((current, row) => {
-      return row.balance < current.balance ? row : current;
-    }, rows[0]);
+    elements.cashflowNote.textContent = `${rows.length} meses em ordem cronológica`;
+  }
 
+  function renderInsights(metrics) {
     const topCategory = metrics.categoryStats[0];
-    const bestSeason = seasonEntry(metrics.monthAverages, "max");
-    const worstSeason = seasonEntry(metrics.monthAverages, "min");
-
-    const volatilityTone = metrics.incomeVolatility <= 0.15
-      ? "tone-good"
-      : metrics.incomeVolatility <= 0.3
-        ? "tone-warn"
-        : "tone-danger";
-
-    const recentTone = metrics.recentSpendChange <= 0
-      ? "tone-good"
-      : metrics.recentSpendChange <= 0.1
-        ? "tone-warn"
-        : "tone-danger";
+    const worst = metrics.worstMonth;
+    const best = metrics.bestMonth;
+    const recentTrendType = metrics.recentSpendChange > 0.05
+      ? "negative"
+      : metrics.recentSpendChange < -0.05
+        ? "positive"
+        : "warning";
 
     const cards = [
       {
-        tone: metrics.averageBalance >= 0
-          ? "tone-good"
-          : "tone-danger",
-        icon: metrics.averageBalance >= 0 ? "↗" : "↘",
-        title: "Sobra média",
-        value: `${currency.format(metrics.averageBalance)} / mês`,
-        text: metrics.averageBalance >= 0
-          ? `A média deixa ${currency.format(
-              metrics.averageBalance
-            )} depois das despesas. No recorte inteiro, o saldo acumulado foi ${currency.format(
-              metrics.balance
-            )}.`
-          : `A média termina ${currency.format(
-              Math.abs(metrics.averageBalance)
-            )} abaixo de zero. O primeiro ajuste deve olhar para recorrentes e flexíveis separadamente.`
+        type: metrics.recurringCapacity >= 0 ? "positive" : "negative",
+        icon: metrics.recurringCapacity >= 0 ? "✓" : "!",
+        label: "Orçamento recorrente",
+        title: `${money.format(metrics.recurringCapacity)} por mês`,
+        text: `Diferença entre a renda mediana (${money.format(metrics.medianIncome)}) e o gasto médio (${money.format(metrics.averageSpend)}).`
       },
       {
-        tone:
-          metrics.essentialIncomeShare <= 0.6
-            ? "tone-good"
-            : metrics.essentialIncomeShare <= 0.75
-              ? "tone-warn"
-              : "tone-danger",
+        type: metrics.essentialCommitment <= 0.6 ? "positive" : "warning",
         icon: "⌂",
-        title: "Contas da casa",
-        value: `${percent.format(
-          metrics.essentialIncomeShare
-        )} da renda`,
-        text: `${currency.format(
-          metrics.averageGroups.essential
-        )} por mês vão para essenciais. Isso equivale a ${percent.format(
-          metrics.essentialSpendShare
-        )} de todos os gastos.`
+        label: "Peso fixo",
+        title: `${percentage.format(metrics.essentialCommitment)} da entrada`,
+        text: `Aluguel, condomínio, luz, gás e internet representam ${money.format(metrics.groupAverages.essential)} por mês.`
       },
       {
-        tone: "tone-warn",
-        icon: "≈",
-        title: "Gastos flexíveis",
-        value: `${currency.format(
-          metrics.averageGroups.flexible
-        )} / mês`,
-        text: `Uma simulação de 10% menos nessa cesta liberaria ${currency.format(
-          metrics.averageGroups.flexible * 0.1
-        )} por mês — uma referência de cenário, não uma meta automática.`
+        type: "warning",
+        icon: "◉",
+        label: "Maior categoria",
+        title: topCategory ? labelize(topCategory.name) : "—",
+        text: topCategory
+          ? `${money.format(topCategory.average)} por mês e ${percentage.format(topCategory.share)} de todos os gastos.`
+          : "Nenhuma categoria disponível."
       },
       {
-        tone: "tone-danger",
-        icon: "!",
-        title: "Mês mais apertado",
-        value: `${capitalize(worst.month)} ${
-          worst.year
-        } · ${currency.format(worst.balance)}`,
-        text: `Foi o menor saldo do recorte. Nesse mês, entraram ${currency.format(
-          worst.income
-        )} e saíram ${currency.format(worst.spend)}.`
+        type: worst && worst.balance < 0 ? "negative" : "warning",
+        icon: "↓",
+        label: "Mês mais apertado",
+        title: worst ? `${capitalize(worst.month)} ${worst.year}` : "—",
+        text: worst
+          ? `Saldo de ${money.format(worst.balance)} com ${money.format(worst.income)} de entradas e ${money.format(worst.spend)} de gastos.`
+          : "Sem dados."
       },
       {
-        tone: volatilityTone,
+        type: recentTrendType,
+        icon: metrics.recentSpendChange > 0 ? "↗" : "↘",
+        label: "Ritmo recente",
+        title: `${metrics.recentSpendChange >= 0 ? "+" : ""}${percentage.format(metrics.recentSpendChange)} nos gastos`,
+        text: `Os últimos três meses ficaram em ${money.format(metrics.recentSpendAverage)}/mês contra ${money.format(metrics.previousSpendAverage)}/mês no trimestre anterior.`
+      },
+      {
+        type: metrics.incomeVolatility > 0.3 ? "warning" : "positive",
         icon: "∿",
-        title: "Previsibilidade da renda",
-        value: `${incomeVolatilityLabel(
-          metrics.incomeVolatility
-        )} · ${percent.format(metrics.incomeVolatility)}`,
-        text: `A menor entrada foi ${currency.format(
-          metrics.minIncome
-        )} e a maior ${currency.format(
-          metrics.maxIncome
-        )}. ${
-          metrics.extraordinaryIncomeCount
-            ? `${metrics.extraordinaryIncomeCount} mês(es) ficaram bem acima da mediana.`
-            : "Não há picos muito acima da mediana."
-        }`
-      },
-      {
-        tone: recentTone,
-        icon: metrics.recentSpendChange <= 0 ? "↓" : "↑",
-        title: "Movimento recente",
-        value: `${
-          metrics.recentSpendChange >= 0 ? "+" : ""
-        }${percent.format(metrics.recentSpendChange)} em gastos`,
-        text: `Comparando o terço final com o inicial, o gasto médio passou de ${currency.format(
-          metrics.firstWindowSpend
-        )} para ${currency.format(
-          metrics.recentWindowSpend
-        )} por mês. Melhor mês médio: ${
-          bestSeason
-            ? capitalize(MONTHS[bestSeason.index])
-            : "—"
-        }.`
+        label: "Variação da renda",
+        title: incomeVolatilityLabel(metrics.incomeVolatility),
+        text: `${percentage.format(metrics.incomeVolatility)} de variação relativa. Melhor mês do recorte: ${best ? `${capitalize(best.month)} ${best.year}, ${money.format(best.balance)}` : "—"}.`
       }
     ];
 
-    if (topCategory && rows.length > 1) {
-      cards[2].text += ` A categoria que mais pesa no total é ${labelize(
-        topCategory.category
-      )} (${percent.format(topCategory.share)}).`;
-    }
-
-    if (
-      bestSeason &&
-      worstSeason &&
-      bestSeason.index !== worstSeason.index
-    ) {
-      cards[5].text += ` O calendário mais apertado foi ${capitalize(
-        MONTHS[worstSeason.index]
-      )}, com saldo médio de ${currency.format(
-        worstSeason.value
-      )}.`;
-    }
-
-    els.insightsList.innerHTML = cards
-      .map((card) => {
-        return `
-          <article class="insight-card ${card.tone}">
-            <div class="insight-top">
-              <span class="insight-icon">${card.icon}</span>
-              <span class="insight-title">${card.title}</span>
-            </div>
-            <strong>${escapeHtml(card.value)}</strong>
-            <p>${escapeHtml(card.text)}</p>
-          </article>
-        `;
-      })
-      .join("");
-  }
-
-  function renderActions(rows, metrics) {
-    if (!rows.length) {
-      els.actionList.innerHTML =
-        `<p class="empty-copy">Aguardando dados para montar as leituras práticas.</p>`;
-
-      return;
-    }
-
-    const weakestIncomeRow = rows.reduce((current, row) => {
-      return row.income < current.income ? row : current;
-    }, rows[0]);
-
-    const essentialBuffer =
-      metrics.averageIncome - metrics.averageGroups.essential;
-
-    const actions = [
-      {
-        title: "Conheça o piso da casa",
-        text: `As contas essenciais ficam em torno de ${currency.format(
-          metrics.averageGroups.essential
-        )} por mês. Esse é o valor recorrente que precisa caber antes dos gastos flexíveis.`
-      },
-      {
-        title: "Teste um cenário flexível",
-        text: `Sem alterar a planilha, um corte simulado de 10% em flexíveis representa ${currency.format(
-          metrics.averageGroups.flexible * 0.1
-        )} por mês e ${currency.format(
-          metrics.averageGroups.flexible * 0.1 * 12
-        )} em um ano cheio.`
-      },
-      {
-        title: "Proteja o mês de menor entrada",
-        text: `A menor entrada foi ${currency.format(
-          weakestIncomeRow.income
-        )} em ${capitalize(weakestIncomeRow.month)} ${
-          weakestIncomeRow.year
-        }; sobrariam ${currency.format(
-          weakestIncomeRow.income -
-            metrics.averageGroups.essential
-        )} depois dos essenciais médios.`
-      }
-    ];
-
-    if (essentialBuffer < 0) {
-      actions[0].title = "Atenção ao piso recorrente";
-
-      actions[0].text = `Os essenciais médios (${currency.format(
-        metrics.averageGroups.essential
-      )}) já superam a entrada média em ${currency.format(
-        Math.abs(essentialBuffer)
-      )}. Vale separar esse sinal dos gastos flexíveis para entender o peso estrutural.`;
-    }
-
-    els.actionList.innerHTML = actions
-      .map((action, index) => {
-        return `
-          <div class="action-item">
-            <span class="action-number">${index + 1}</span>
-            <div>
-              <strong>${escapeHtml(action.title)}</strong>
-              <p>${escapeHtml(action.text)}</p>
-            </div>
+    elements.insightsGrid.innerHTML = cards.map((card) => {
+      return `
+        <article class="insight ${card.type}">
+          <div class="insight-top">
+            <span class="insight-icon">${card.icon}</span>
+            <span>${escapeHtml(card.label)}</span>
           </div>
-        `;
-      })
-      .join("");
+          <strong>${escapeHtml(card.title)}</strong>
+          <p>${escapeHtml(card.text)}</p>
+        </article>
+      `;
+    }).join("");
   }
 
   function renderCategoryTable(metrics) {
-    if (
-      !metrics.categoryStats.length ||
-      metrics.categoryStats.every((entry) => entry.total === 0)
-    ) {
-      els.categoryTableBody.innerHTML =
-        `<tr><td colspan="5">Nenhuma categoria encontrada.</td></tr>`;
-
-      return;
-    }
-
-    els.categoryTableBody.innerHTML = metrics.categoryStats
-      .slice(0, 10)
-      .map((entry) => {
-        const trendClass = entry.trend > 0.05
-          ? "trend-up"
-          : entry.trend < -0.05
-            ? "trend-down"
-            : "trend-flat";
-
-        const trendLabel = entry.trend > 0.05
-          ? `↑ ${percent.format(entry.trend)}`
-          : entry.trend < -0.05
-            ? `↓ ${percent.format(Math.abs(entry.trend))}`
-            : "estável";
-
-        return `
-          <tr>
-            <td>${escapeHtml(labelize(entry.category))}</td>
-            <td>
-              <span class="group-badge ${entry.group}">
-                ${GROUP_RULES[entry.group].shortLabel}
-              </span>
-            </td>
-            <td>${currency.format(entry.average)}</td>
-            <td>${percent.format(entry.share)}</td>
-            <td class="${trendClass}">${trendLabel}</td>
-          </tr>
-        `;
-      })
-      .join("");
-  }
-
-  function renderTable(rows) {
-    const sorted = [...rows].sort(
-      (first, second) => second.date - first.date
-    );
-
-    els.tableCaption.textContent = `${rows.length} ${
-      rows.length === 1 ? "linha" : "linhas"
-    }`;
-
-    if (!sorted.length) {
-      els.dataTableBody.innerHTML =
-        `<tr><td colspan="8">Nenhum mês corresponde aos filtros.</td></tr>`;
-
-      return;
-    }
-
-    els.dataTableBody.innerHTML = sorted
-      .map((row) => {
-        const balanceClass =
-          row.balance >= 0 ? "positive" : "negative";
-
-        const statusLabel =
-          row.balance >= 0 ? "No azul" : "No vermelho";
-
-        return `
-          <tr>
-            <td>${capitalize(row.month)} ${row.year}</td>
-            <td class="amount">${currency.format(row.income)}</td>
-            <td class="amount">${currency.format(
-              row.groups.essential
-            )}</td>
-            <td class="amount">${currency.format(
-              row.groups.flexible
-            )}</td>
-            <td class="amount">${currency.format(
-              row.groups.other
-            )}</td>
-            <td class="amount">${currency.format(row.spend)}</td>
-            <td class="${balanceClass}">${currency.format(
-              row.balance
-            )}</td>
-            <td class="${balanceClass}">
-              <span class="status-pill">${statusLabel}</span>
-            </td>
-          </tr>
-        `;
-      })
-      .join("");
-  }
-
-  function renderEmpty() {
-    els.filterResult.textContent = "0 meses";
-    els.periodLabel.textContent = "Aguardando uma planilha";
-
-    els.heroTitle.textContent =
-      "Carregue uma tabela para começar.";
-
-    els.heroText.textContent =
-      "O painel vai separar contas essenciais de gastos flexíveis e permitir comparar vários anos de uma só vez.";
-
-    els.heroLastBalance.textContent = "—";
-    els.heroLastLabel.textContent = "—";
-    els.heroAverageBalance.textContent = "—";
-    els.heroAverageLabel.textContent = "—";
-    els.heroEssentialShare.textContent = "—";
-    els.heroEssentialLabel.textContent = "da renda média";
-
-    [
-      "kpiBalance",
-      "kpiIncomeAvg",
-      "kpiSpendAvg",
-      "kpiEssential",
-      "kpiFlexible",
-      "kpiPositive",
-      "snapshotBalance",
-      "snapshotIncome",
-      "snapshotEssential",
-      "snapshotFlexible",
-      "snapshotSpend"
-    ].forEach((id) => {
-      els[id].textContent = "—";
+    const visibleCategories = metrics.categoryStats.filter((category) => {
+      return state.filters.view === "all" || category.group === state.filters.view;
     });
 
-    els.insightsList.innerHTML = `
-      <article class="insight-card">
-        <div class="insight-top">
-          <span class="insight-icon">↥</span>
-          <span class="insight-title">Comece por aqui</span>
-        </div>
-        <strong>Carregue uma tabela</strong>
-        <p>Use a área “Trocar tabela” para importar os dados da casa.</p>
-      </article>
-    `;
+    if (!visibleCategories.length) {
+      elements.categoryTableBody.innerHTML =
+        `<tr><td class="empty-row" colspan="5">Nenhuma categoria nesse recorte.</td></tr>`;
+      return;
+    }
 
-    els.actionList.innerHTML =
-      `<p class="empty-copy">As leituras práticas aparecem depois da importação.</p>`;
+    elements.categoryTableBody.innerHTML = visibleCategories.map((category) => {
+      const trendClass = category.trend > 0.05
+        ? "up"
+        : category.trend < -0.05
+          ? "down"
+          : "stable";
 
-    els.categoryTableBody.innerHTML =
-      `<tr><td colspan="5">Aguardando dados…</td></tr>`;
+      const trendLabel = category.trend > 0.05
+        ? `↑ ${percentage.format(category.trend)}`
+        : category.trend < -0.05
+          ? `↓ ${percentage.format(Math.abs(category.trend))}`
+          : "Estável";
 
-    els.dataTableBody.innerHTML =
-      `<tr><td colspan="8">Aguardando dados…</td></tr>`;
+      return `
+        <tr>
+          <td>${escapeHtml(labelize(category.name))}</td>
+          <td><span class="type-badge ${category.group}">${GROUPS[category.group].label}</span></td>
+          <td>${money.format(category.average)}</td>
+          <td>${percentage.format(category.share)}</td>
+          <td><span class="trend-badge ${trendClass}">${trendLabel}</span></td>
+        </tr>
+      `;
+    }).join("");
+  }
 
-    els.allocationBar.innerHTML = "";
-    els.allocationLegend.innerHTML = "";
+  function renderMonthlyTable(rows) {
+    const sortedRows = [...rows].sort((first, second) => second.date - first.date);
+    elements.tableCount.textContent = `${rows.length} registros`;
 
-    els.snapshotStatus.textContent = "sem dados";
-    els.snapshotStatus.classList.remove("is-negative");
-    els.snapshotLabel.textContent = "—";
+    elements.monthlyTableBody.innerHTML = sortedRows.map((row) => {
+      const positive = row.balance >= 0;
 
-    els.snapshotNote.textContent =
-      "Importe uma planilha para obter um retrato mensal.";
+      return `
+        <tr>
+          <td>${capitalize(row.month)} ${row.year}</td>
+          <td>${money.format(row.income)}</td>
+          <td>${money.format(row.groups.essential)}</td>
+          <td>${money.format(row.groups.flexible)}</td>
+          <td>${money.format(row.spend)}</td>
+          <td class="${positive ? "positive-value" : "negative-value"}">${money.format(row.balance)}</td>
+          <td>
+            <span class="status-badge ${positive ? "positive" : "negative"}">
+              ${positive ? "Com sobra" : "No vermelho"}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join("");
+  }
 
-    renderFilterControls();
+  function renderNoMatches() {
+    elements.heroTitle.textContent = "Nenhum mês corresponde aos filtros.";
+    elements.heroDescription.textContent = "Selecione mais anos, meses ou volte para a situação ‘Todos’.";
+    elements.heroNumber.textContent = "—";
+    elements.heroNumberFoot.textContent = "Sem dados no recorte";
+    elements.heroNumber.classList.remove("is-positive", "is-negative");
+
+    [
+      "incomeAverage",
+      "spendAverage",
+      "balanceAverage",
+      "positiveRate"
+    ].forEach((id) => {
+      elements[id].textContent = "—";
+      elements[id].classList.remove("is-positive", "is-negative");
+    });
+
+    elements.healthSummary.textContent = "Amplie o recorte para recalcular os indicadores.";
+    [elements.spendProgress, elements.essentialProgress, elements.flexibleProgress].forEach((bar) => {
+      bar.style.width = "0%";
+    });
+
+    elements.spendCommitment.textContent = "—";
+    elements.essentialCommitment.textContent = "—";
+    elements.flexibleCommitment.textContent = "—";
+    elements.insightsGrid.innerHTML = `<div class="insight"><strong>Sem dados</strong><p>Altere os filtros para continuar.</p></div>`;
+    elements.categoryTableBody.innerHTML = `<tr><td class="empty-row" colspan="5">Sem dados no recorte.</td></tr>`;
+    elements.monthlyTableBody.innerHTML = `<tr><td class="empty-row" colspan="7">Sem dados no recorte.</td></tr>`;
+    elements.categoryLegend.innerHTML = "";
+    elements.tableCount.textContent = "0 registros";
     destroyCharts();
   }
 
-  function updateSidebarLegend() {
-    const groups = Object.fromEntries(
-      GROUP_ORDER.map((group) => {
-        return [
-          group,
-          state.categories
-            .filter(
-              (category) =>
-                state.categoryGroups[category] === group
-            )
-            .map(labelize)
-        ];
-      })
-    );
+  function renderEmptyDashboard() {
+    renderFilters();
+    elements.heroTitle.textContent = "Carregue a planilha para começar.";
+    elements.heroDescription.textContent = "O painel usará as colunas reais da tabela para montar os indicadores.";
+    elements.heroNumber.textContent = "—";
+    elements.heroNumberFoot.textContent = "Aguardando dados";
 
-    els.essentialLegend.textContent = groups.essential.length
-      ? groups.essential.join(", ")
-      : "Nenhuma coluna identificada";
+    [
+      "incomeAverage",
+      "spendAverage",
+      "balanceAverage",
+      "positiveRate"
+    ].forEach((id) => {
+      elements[id].textContent = "—";
+    });
 
-    els.flexibleLegend.textContent = groups.flexible.length
-      ? groups.flexible.join(", ")
-      : "Nenhuma coluna identificada";
-
-    els.otherLegend.textContent = groups.other.length
-      ? groups.other.join(", ")
-      : "Nenhuma coluna identificada";
-
-    els.classificationNote.textContent = state.ignoredRows
-      ? `${state.ignoredRows} linha(s) sem mês/ano foram ignoradas durante a leitura.`
-      : "A classificação é inferida pelo nome das colunas e usada para orientar a leitura.";
+    elements.categoryTableBody.innerHTML = `<tr><td class="empty-row" colspan="5">Aguardando planilha.</td></tr>`;
+    elements.monthlyTableBody.innerHTML = `<tr><td class="empty-row" colspan="7">Aguardando planilha.</td></tr>`;
+    elements.insightsGrid.innerHTML = `<div class="insight"><strong>Aguardando dados</strong><p>Carregue Financas.xlsx para gerar os insights.</p></div>`;
   }
 
-  function updateQuickRead(rows, metrics) {
-    if (!rows.length) {
-      els.quickRead.textContent =
-        "Amplie o recorte para continuar a leitura.";
-
+  function exportCurrentView() {
+    if (!state.filteredRows.length) {
+      showToast("Não há dados para exportar.", true);
       return;
     }
 
-    if (metrics.essentialIncomeShare > 0.75) {
-      els.quickRead.textContent =
-        `Os essenciais ocupam ${percent.format(
-          metrics.essentialIncomeShare
-        )} da renda média; esse é o primeiro número para acompanhar.`;
+    const headers = [
+      "Mês",
+      "Ano",
+      "Entradas",
+      "Base da casa",
+      "Flexíveis",
+      "Outros",
+      "Total gasto",
+      "Saldo",
+      ...state.categories.map(labelize)
+    ];
 
-      return;
-    }
+    const body = state.filteredRows.map((row) => [
+      capitalize(row.month),
+      row.year,
+      row.income,
+      row.groups.essential,
+      row.groups.flexible,
+      row.groups.other,
+      row.spend,
+      row.balance,
+      ...state.categories.map((category) => row.categories[category])
+    ]);
 
-    if (metrics.recentSpendChange > 0.1) {
-      els.quickRead.textContent =
-        `O gasto médio recente subiu ${percent.format(
-          metrics.recentSpendChange
-        )} contra o início do recorte.`;
+    const csv = [headers, ...body]
+      .map((row) => row.map(csvValue).join(";"))
+      .join("\n");
 
-      return;
-    }
+    const blob = new Blob(["\uFEFF" + csv], {
+      type: "text/csv;charset=utf-8"
+    });
 
-    els.quickRead.textContent = metrics.averageBalance >= 0
-      ? "A média termina no azul; veja se a sobra aparece também nos meses de menor entrada."
-      : "A média termina no vermelho; compare primeiro os meses de menor entrada e os gastos flexíveis.";
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "financas-filtradas.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+    showToast("Recorte exportado.");
   }
 
-  function updateChart(name, canvas, config) {
+  function configureCharts() {
+    if (!window.Chart) {
+      return;
+    }
+
+    Chart.defaults.color = "#97a1ba";
+    Chart.defaults.font.family = "\"DM Sans\", sans-serif";
+    Chart.defaults.font.size = 10;
+    Chart.defaults.animation.duration = 450;
+    Chart.defaults.plugins.legend.labels = Chart.defaults.plugins.legend.labels || {};
+    Chart.defaults.plugins.legend.labels.usePointStyle = true;
+    Chart.defaults.plugins.legend.labels.pointStyle = "circle";
+    Chart.defaults.plugins.legend.labels.boxWidth = 7;
+    Chart.defaults.plugins.legend.labels.boxHeight = 7;
+    Chart.defaults.plugins.tooltip.backgroundColor = "rgba(17, 23, 43, 0.97)";
+    Chart.defaults.plugins.tooltip.borderColor = "rgba(255,255,255,0.12)";
+    Chart.defaults.plugins.tooltip.borderWidth = 1;
+    Chart.defaults.plugins.tooltip.padding = 11;
+  }
+
+  function replaceChart(name, canvas, configuration) {
     if (state.charts[name]) {
       state.charts[name].destroy();
     }
 
-    state.charts[name] = new Chart(canvas, config);
+    state.charts[name] = new Chart(canvas, configuration);
   }
 
   function destroyCharts() {
-    Object.values(state.charts).forEach((chart) => {
-      chart.destroy();
-    });
-
+    Object.values(state.charts).forEach((chart) => chart.destroy());
     state.charts = {};
   }
 
-  function cashflowOptions() {
+  function cashflowChartOptions() {
     return {
       responsive: true,
       maintainAspectRatio: false,
@@ -1915,90 +1276,42 @@
       },
       scales: {
         x: {
-          stacked: true,
-          grid: {
-            display: false
-          },
+          grid: { display: false },
           ticks: {
+            color: "#7e89a3",
             maxRotation: 0,
             autoSkip: true,
-            maxTicksLimit: 10,
-            color: "#76829e"
+            maxTicksLimit: window.innerWidth < 640 ? 6 : 14
           }
         },
         y: {
-          stacked: true,
           beginAtZero: true,
-          grid: {
-            color: "rgba(255,255,255,.07)",
-            drawBorder: false
-          },
+          grid: { color: "rgba(255,255,255,0.06)" },
           ticks: {
-            color: "#76829e",
-            maxTicksLimit: 5,
-            callback: compactCurrency
+            color: "#7e89a3",
+            maxTicksLimit: 6,
+            callback: compactMoney
           }
         },
-        income: {
+        balance: {
           position: "right",
-          beginAtZero: true,
-          grid: {
-            drawOnChartArea: false
-          },
+          grid: { drawOnChartArea: false },
           ticks: {
-            color: "#c5cce2",
-            maxTicksLimit: 5,
-            callback: compactCurrency
+            color: "#aab2c8",
+            maxTicksLimit: 6,
+            callback: compactMoney
           }
         }
       },
       plugins: {
-        tooltip: {
-          callbacks: {
-            label(context) {
-              return ` ${context.dataset.label}: ${currency.format(
-                context.raw || 0
-              )}`;
-            }
-          }
-        }
-      }
-    };
-  }
-
-  function categoryOptions() {
-    return {
-      indexAxis: "y",
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          beginAtZero: true,
-          grid: {
-            color: "rgba(255,255,255,.07)",
-            drawBorder: false
-          },
-          ticks: {
-            color: "#76829e",
-            maxTicksLimit: 5,
-            callback: compactCurrency
-          }
+        legend: {
+          display: true,
+          position: "bottom"
         },
-        y: {
-          grid: {
-            display: false
-          },
-          ticks: {
-            color: "#a9b4cf",
-            autoSkip: false
-          }
-        }
-      },
-      plugins: {
         tooltip: {
           callbacks: {
             label(context) {
-              return ` ${currency.format(context.raw || 0)}`;
+              return ` ${context.dataset.label}: ${money.format(context.raw || 0)}`;
             }
           }
         }
@@ -2006,39 +1319,20 @@
     };
   }
 
-  function groupedBarOptions() {
+  function doughnutChartOptions() {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      scales: {
-        x: {
-          grid: {
-            display: false
-          },
-          ticks: {
-            color: "#76829e"
-          }
-        },
-        y: {
-          beginAtZero: true,
-          grid: {
-            color: "rgba(255,255,255,.07)",
-            drawBorder: false
-          },
-          ticks: {
-            color: "#76829e",
-            maxTicksLimit: 5,
-            callback: compactCurrency
-          }
-        }
-      },
+      cutout: "68%",
       plugins: {
+        legend: { display: false },
         tooltip: {
           callbacks: {
             label(context) {
-              return ` ${context.dataset.label}: ${currency.format(
-                context.raw || 0
-              )}`;
+              const values = context.dataset.data;
+              const total = values.reduce((sumValue, value) => sumValue + value, 0);
+              const share = total ? context.raw / total : 0;
+              return ` ${context.label}: ${money.format(context.raw)} · ${percentage.format(share)}`;
             }
           }
         }
@@ -2046,39 +1340,37 @@
     };
   }
 
-  function seasonalityOptions() {
+  function yearChartOptions() {
     return {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: {
+        mode: "index",
+        intersect: false
+      },
       scales: {
         x: {
-          grid: {
-            display: false
-          },
-          ticks: {
-            color: "#76829e"
-          }
+          grid: { display: false },
+          ticks: { color: "#7e89a3" }
         },
         y: {
-          beginAtZero: false,
-          grid: {
-            color: "rgba(255,255,255,.07)",
-            drawBorder: false
-          },
+          grid: { color: "rgba(255,255,255,0.06)" },
           ticks: {
-            color: "#76829e",
-            maxTicksLimit: 5,
-            callback: compactCurrency
+            color: "#7e89a3",
+            maxTicksLimit: 6,
+            callback: compactMoney
           }
         }
       },
       plugins: {
+        legend: {
+          display: true,
+          position: "bottom"
+        },
         tooltip: {
           callbacks: {
             label(context) {
-              return ` Saldo médio: ${currency.format(
-                context.raw || 0
-              )}`;
+              return ` ${context.dataset.label}: ${money.format(context.raw || 0)}`;
             }
           }
         }
@@ -2086,376 +1378,106 @@
     };
   }
 
-  function barDataset(label, data, backgroundColor) {
-    return {
-      label,
-      data,
-      backgroundColor,
-      borderRadius: 5,
-      maxBarThickness: 20,
-      stack: "expenses"
-    };
+  function setSourceStatus(status, name, meta) {
+    elements.sourceName.textContent = name;
+    elements.sourceMeta.textContent = meta;
+    elements.statusDot.classList.toggle("is-ready", status === "ready");
+    elements.statusDot.classList.toggle("is-error", status === "error");
   }
 
-  function getFocusCategories(categoryStats) {
-    if (filterState.lens === "all") {
-      return categoryStats;
-    }
-
-    return categoryStats.filter((entry) => {
-      return entry.group === filterState.lens;
-    });
-  }
-
-  function groupByYearAverage(rows) {
-    const groups = {};
-
-    rows.forEach((row) => {
-      if (!groups[row.year]) {
-        groups[row.year] = {
-          months: 0,
-          income: 0,
-          spend: 0,
-          balance: 0
-        };
-      }
-
-      groups[row.year].months += 1;
-      groups[row.year].income += row.income;
-      groups[row.year].spend += row.spend;
-      groups[row.year].balance += row.balance;
-    });
-
-    Object.values(groups).forEach((group) => {
-      group.income /= group.months;
-      group.spend /= group.months;
-      group.balance /= group.months;
-    });
-
-    return Object.fromEntries(
-      Object.entries(groups).sort(
-        ([first], [second]) => Number(first) - Number(second)
-      )
-    );
-  }
-
-  function groupByMonthAverage(rows) {
-    const groups = {};
-
-    rows.forEach((row) => {
-      if (!groups[row.monthIndex]) {
-        groups[row.monthIndex] = {
-          months: 0,
-          balance: 0,
-          spend: 0,
-          income: 0
-        };
-      }
-
-      groups[row.monthIndex].months += 1;
-      groups[row.monthIndex].balance += row.balance;
-      groups[row.monthIndex].spend += row.spend;
-      groups[row.monthIndex].income += row.income;
-    });
-
-    Object.values(groups).forEach((group) => {
-      group.balance /= group.months;
-      group.spend /= group.months;
-      group.income /= group.months;
-    });
-
-    return groups;
-  }
-
-  function seasonEntry(monthAverages, mode) {
-    const entries = Object.entries(monthAverages).map(
-      ([index, values]) => {
-        return {
-          index: Number(index),
-          value: values.balance
-        };
-      }
+  function showLoadError(detail) {
+    setSourceStatus(
+      "error",
+      "Planilha não encontrada",
+      "Use Financas.xlsx na raiz ou carregue outra tabela."
     );
 
-    if (!entries.length) {
-      return null;
-    }
-
-    return entries.reduce((current, entry) => {
-      if (mode === "max") {
-        return entry.value > current.value
-          ? entry
-          : current;
-      }
-
-      return entry.value < current.value
-        ? entry
-        : current;
-    }, entries[0]);
+    elements.emptyError.textContent = detail;
+    elements.emptyState.hidden = false;
   }
 
-  function summarizeGroups(values, categoryGroups) {
-    const groups = {
-      essential: 0,
-      flexible: 0,
-      other: 0
-    };
+  function showToast(message, isError = false) {
+    window.clearTimeout(showToast.timer);
+    elements.toast.textContent = message;
+    elements.toast.classList.toggle("is-error", isError);
+    elements.toast.classList.add("is-visible");
 
-    Object.entries(values).forEach(([category, value]) => {
-      const group = categoryGroups[category] || "other";
-      groups[group] += value;
-    });
-
-    return groups;
+    showToast.timer = window.setTimeout(() => {
+      elements.toast.classList.remove("is-visible");
+    }, 3200);
   }
 
-  function findLeader(values) {
-    const entries = Object.entries(values);
-
-    if (!entries.length) {
-      return "";
-    }
-
-    return entries.sort((first, second) => {
-      return second[1] - first[1];
-    })[0][0];
+  function setProgress(element, value) {
+    const safeValue = Math.max(0, Math.min(value, 1.2));
+    element.style.width = `${Math.min(100, safeValue * 100)}%`;
   }
 
-  function inferGroup(category) {
+  function inferCategoryGroup(category) {
     const normalized = normalizeKey(category);
 
-    if (
-      GROUP_RULES.essential.aliases.some((alias) =>
-        normalized.includes(normalizeKey(alias))
-      )
-    ) {
+    if (GROUPS.essential.aliases.some((alias) => normalized.includes(normalizeKey(alias)))) {
       return "essential";
     }
 
-    if (
-      GROUP_RULES.flexible.aliases.some((alias) =>
-        normalized.includes(normalizeKey(alias))
-      )
-    ) {
+    if (GROUPS.flexible.aliases.some((alias) => normalized.includes(normalizeKey(alias)))) {
       return "flexible";
     }
 
     return "other";
   }
 
-  function incomeVolatilityLabel(value) {
-    if (value <= 0.15) {
-      return "renda previsível";
-    }
-
-    if (value <= 0.3) {
-      return "renda variável";
-    }
-
-    return "renda irregular";
-  }
-
-  function buildFooterMethod() {
-    const sourceLabel = state.incomeSources.length
-      ? state.incomeSources.map(labelize).join(" + ")
-      : "fontes de renda identificadas";
-
-    return `Entradas = ${sourceLabel} · gastos = categorias · sobra = entradas − gastos.`;
-  }
-
-  function setSourceState(status, name, meta) {
-    els.sourceName.textContent = name;
-    els.sourceMeta.textContent = meta;
-    els.dataStatusDot.classList.toggle(
-      "is-ready",
-      status === "ready"
-    );
-  }
-
-  function showToast(message, isError = false) {
-    els.toast.textContent = message;
-    els.toast.classList.toggle("error", isError);
-    els.toast.classList.add("show");
-
-    window.clearTimeout(showToast.timer);
-
-    showToast.timer = window.setTimeout(() => {
-      els.toast.classList.remove("show");
-    }, 3200);
-  }
-
-  function exportFilteredCsv() {
-    if (!state.filtered.length) {
-      showToast(
-        "Não há dados filtrados para exportar",
-        true
-      );
-
-      return;
-    }
-
-    const headers = [
-      "Mês",
-      "Ano",
-      "Entradas",
-      "Essenciais",
-      "Flexíveis",
-      "Outros",
-      "Total Gasto",
-      "Balança",
-      "Taxa de poupança",
-      ...state.categories.map(labelize)
-    ];
-
-    const dataRows = state.filtered.map((row) => {
-      return [
-        capitalize(row.month),
-        row.year,
-        row.income,
-        row.groups.essential,
-        row.groups.flexible,
-        row.groups.other,
-        row.spend,
-        row.balance,
-        row.savingsRate,
-        ...state.categories.map(
-          (category) => row.values[category]
-        )
-      ];
-    });
-
-    const lines = [headers, ...dataRows].map((line) => {
-      return line.map(csvEscape).join(";");
-    });
-
-    const blob = new Blob(
-      ["\uFEFF" + lines.join("\n")],
-      {
-        type: "text/csv;charset=utf-8"
-      }
-    );
-
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-
-    anchor.href = url;
-    anchor.download =
-      "financas-da-casa-visao-filtrada.csv";
-
-    anchor.click();
-
-    URL.revokeObjectURL(url);
-    showToast("CSV exportado");
-  }
-
-  function csvEscape(value) {
-    const text = String(
-      value == null ? "" : value
-    ).replace(/"/g, '""');
-
-    return /[;"\n]/.test(text)
-      ? `"${text}"`
-      : text;
-  }
-
-  function monthIndexOf(value) {
-    const normalized = normalizeText(value);
-
-    if (!normalized) {
-      return -1;
-    }
-
-    const direct = MONTHS
-      .map(normalizeText)
-      .indexOf(normalized);
-
-    if (direct >= 0) {
-      return direct;
-    }
-
-    const numeric = Number(value);
-
-    return numeric >= 1 && numeric <= 12
-      ? numeric - 1
-      : -1;
-  }
-
-  function findKey(keyInfo, aliases) {
+  function findColumn(headerInfo, aliases) {
     const normalizedAliases = aliases.map(normalizeKey);
-
-    const exact = keyInfo.find(({ id }) =>
-      normalizedAliases.includes(id)
-    );
+    const exact = headerInfo.find(({ normalized }) => normalizedAliases.includes(normalized));
 
     if (exact) {
-      return exact.key;
+      return exact.original;
     }
 
-    const partial = keyInfo.find(({ id }) => {
-      return normalizedAliases.some((alias) =>
-        id.includes(alias)
-      );
+    const partial = headerInfo.find(({ normalized }) => {
+      return normalizedAliases.some((alias) => normalized.includes(alias));
     });
 
-    return partial ? partial.key : null;
+    return partial ? partial.original : null;
   }
 
-  function normalizeKey(value) {
-    return normalizeText(value).replace(
-      /[^a-z0-9]/g,
-      ""
-    );
-  }
+  function parseMonth(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return value.getMonth();
+    }
 
-  function normalizeText(value) {
-    return String(value == null ? "" : value)
-      .trim()
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-  }
+    const normalized = normalizeText(value);
+    const textIndex = MONTHS.map(normalizeText).indexOf(normalized);
 
-  function labelize(value) {
-    return String(value || "")
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .replace(/\b\w/g, (letter) =>
-        letter.toUpperCase()
-      );
-  }
+    if (textIndex >= 0) {
+      return textIndex;
+    }
 
-  function capitalize(value) {
-    const text = String(value || "");
+    const abbreviationIndex = MONTH_SHORT
+      .map(normalizeText)
+      .indexOf(normalized.slice(0, 3));
 
-    return text.charAt(0).toUpperCase() + text.slice(1);
+    if (abbreviationIndex >= 0) {
+      return abbreviationIndex;
+    }
+
+    const numericValue = Number(value);
+    return numericValue >= 1 && numericValue <= 12 ? numericValue - 1 : -1;
   }
 
   function isNumeric(value) {
-    if (
-      value === null ||
-      value === "" ||
-      value === undefined
-    ) {
-      return false;
-    }
-
     if (typeof value === "number") {
       return Number.isFinite(value);
     }
 
-    const text = String(value).trim();
-
-    if (!text) {
+    if (value === null || value === undefined || String(value).trim() === "") {
       return false;
     }
 
-    return (
-      /^[-+]?\(?\s*R?\$?\s*[\d.]+(?:,\d+)?\s*\)?$/.test(
-        text
-      ) ||
-      /^[-+]?\(?\s*\d+(?:\.\d+)?\s*\)?$/.test(text)
-    );
+    const text = String(value).trim();
+
+    return /^[-+]?\(?\s*R?\$?\s*[\d.]+(?:,\d+)?\s*\)?$/.test(text) ||
+      /^[-+]?\(?\s*\d+(?:\.\d+)?\s*\)?$/.test(text);
   }
 
   function toNumber(value) {
@@ -2463,125 +1485,53 @@
       return Number.isFinite(value) ? value : 0;
     }
 
-    let text = String(
-      value == null ? "" : value
-    ).trim();
+    let text = String(value ?? "").trim();
 
     if (!text) {
       return 0;
     }
 
-    const negative = /^\(.*\)$/.test(text);
-
-    text = text.replace(/[()R$\s]/gi, "");
+    const isNegativeByParentheses = /^\(.*\)$/.test(text);
+    text = text.replace(/[()\sR$]/gi, "");
 
     if (text.includes(",") && text.includes(".")) {
-      text = text
-        .replace(/\./g, "")
-        .replace(",", ".");
-    } else {
+      text = text.replace(/\./g, "").replace(",", ".");
+    } else if (text.includes(",")) {
       text = text.replace(",", ".");
     }
 
-    const parsed = Number(
-      text.replace(/[^\d.-]/g, "")
-    );
+    const parsed = Number(text.replace(/[^0-9.-]/g, ""));
 
-    const safeNumber = Number.isFinite(parsed)
-      ? parsed
-      : 0;
-
-    return (negative ? -1 : 1) * safeNumber;
-  }
-
-  function compactCurrency(value) {
-    const abs = Math.abs(value);
-    const sign = value < 0 ? "−" : "";
-
-    if (abs >= 1000000) {
-      return `${sign}R$ ${(abs / 1000000)
-        .toFixed(1)
-        .replace(".", ",")} mi`;
-    }
-
-    if (abs >= 1000) {
-      return `${sign}R$ ${(abs / 1000)
-        .toFixed(1)
-        .replace(".", ",")} mil`;
-    }
-
-    return `${sign}R$ ${Math.round(abs)}`;
-  }
-
-  function hexToRgba(hex, alpha) {
-    const clean = String(hex).replace("#", "");
-
-    const value = clean.length === 3
-      ? clean
-          .split("")
-          .map((part) => part + part)
-          .join("")
-      : clean;
-
-    const red = parseInt(value.slice(0, 2), 16);
-    const green = parseInt(value.slice(2, 4), 16);
-    const blue = parseInt(value.slice(4, 6), 16);
-
-    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
-  }
-
-  function uniqueSorted(values) {
-    return [...new Set(values)].sort(
-      (first, second) => first - second
-    );
-  }
-
-  function sum(items, getter) {
-    return items.reduce(
-      (total, item) => total + getter(item),
-      0
-    );
-  }
-
-  function average(items, getter) {
-    return items.length
-      ? sum(items, getter) / items.length
-      : 0;
-  }
-
-  function median(values) {
-    if (!values.length) {
+    if (!Number.isFinite(parsed)) {
       return 0;
     }
 
-    const sorted = [...values].sort(
-      (first, second) => first - second
-    );
-
-    const middle = Math.floor(sorted.length / 2);
-
-    return sorted.length % 2
-      ? sorted[middle]
-      : (sorted[middle - 1] + sorted[middle]) / 2;
+    return isNegativeByParentheses ? -Math.abs(parsed) : parsed;
   }
 
-  function standardDeviation(values) {
-    if (!values.length) {
-      return 0;
-    }
+  function normalizeText(value) {
+    return String(value ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
 
-    const mean =
-      values.reduce(
-        (total, value) => total + value,
-        0
-      ) / values.length;
+  function normalizeKey(value) {
+    return normalizeText(value).replace(/[^a-z0-9]/g, "");
+  }
 
-    const variance =
-      values.reduce((total, value) => {
-        return total + (value - mean) ** 2;
-      }, 0) / values.length;
+  function labelize(value) {
+    return String(value ?? "")
+      .trim()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  }
 
-    return Math.sqrt(variance);
+  function capitalize(value) {
+    const text = String(value ?? "");
+    return text.charAt(0).toUpperCase() + text.slice(1);
   }
 
   function getPeriodLabel(rows) {
@@ -2596,28 +1546,91 @@
       return `${capitalize(first.month)} ${first.year}`;
     }
 
-    return `${capitalize(first.month)} ${first.year} — ${capitalize(
-      last.month
-    )} ${last.year}`;
+    return `${capitalize(first.month)} ${first.year} — ${capitalize(last.month)} ${last.year}`;
+  }
+
+  function incomeVolatilityLabel(value) {
+    if (value <= 0.15) {
+      return "Renda previsível";
+    }
+
+    if (value <= 0.3) {
+      return "Renda variável";
+    }
+
+    return "Renda irregular";
+  }
+
+  function compactMoney(value) {
+    const numericValue = Number(value) || 0;
+    const absolute = Math.abs(numericValue);
+    const sign = numericValue < 0 ? "−" : "";
+
+    if (absolute >= 1000000) {
+      return `${sign}R$ ${(absolute / 1000000).toFixed(1).replace(".", ",")} mi`;
+    }
+
+    if (absolute >= 1000) {
+      return `${sign}R$ ${(absolute / 1000).toFixed(1).replace(".", ",")} mil`;
+    }
+
+    return `${sign}R$ ${Math.round(absolute)}`;
+  }
+
+  function csvValue(value) {
+    const text = String(value ?? "").replace(/"/g, '""');
+    return /[;"\n]/.test(text) ? `"${text}"` : text;
+  }
+
+  function sum(items, getter) {
+    return items.reduce((total, item) => total + getter(item), 0);
+  }
+
+  function average(items, getter) {
+    return items.length ? sum(items, getter) / items.length : 0;
+  }
+
+  function median(values) {
+    if (!values.length) {
+      return 0;
+    }
+
+    const sorted = [...values].sort((first, second) => first - second);
+    const middle = Math.floor(sorted.length / 2);
+
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function standardDeviation(values) {
+    if (!values.length) {
+      return 0;
+    }
+
+    const mean = values.reduce((total, value) => total + value, 0) / values.length;
+    const variance = values.reduce((total, value) => {
+      return total + Math.pow(value - mean, 2);
+    }, 0) / values.length;
+
+    return Math.sqrt(variance);
+  }
+
+  function uniqueSorted(values) {
+    return [...new Set(values)].sort((first, second) => first - second);
   }
 
   function escapeHtml(value) {
-    return String(
-      value == null ? "" : value
-    ).replace(/[&<>'"]/g, (character) => {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => {
       const entities = {
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
-        "'": "&#39;",
-        '"': "&quot;"
+        '"': "&quot;",
+        "'": "&#39;"
       };
 
       return entities[character];
     });
-  }
-
-  function clamp(value, min, max) {
-    return Math.min(max, Math.max(min, value));
   }
 })();
